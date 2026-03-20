@@ -15,34 +15,22 @@ Automates the end-to-end process of converting books from Adobe InDesign source 
  InDesign (.indd)
        |
        v
- [export_xhtml.jsx]     JSX script (runs inside InDesign)
+ [export_xhtml.jsx]          JSX script (runs inside InDesign)
        |
        v
    XHTML files
        |
        v
- [process_footnotes.py extract]   Extract footnotes -> footnote_map.json
-       |
-       v
- (optional: review/edit footnotes in footnote_map.json)
-       |
-       v
- [process_footnotes.py insert]    Insert footnotes back as endnotes
-       |
-       v
- [xhtml_to_docx.py]      Clean tags, map styles, convert via Pandoc
-       |
-       v
-   DOCX files
-       |
-       v
- [docx_to_epub.py]       Convert via Calibre with metadata from Excel
-       |
-       v
-   EPUB files
-       |
-       v
- [enrich_epub.py]        Add accessibility metadata, styles, title page
+ [run.py]                    Pipeline runner (steps 1-8)
+  ├── 1. build_structure.py   Parse XHTML -> structured.json
+  ├── 2. process_footnotes extract -> footnote_map.json
+  ├── 3. process_images extract    -> image_map.json
+  │     (optional: review/edit maps)
+  ├── 4. process_footnotes insert  <- footnote_map.json
+  ├── 5. process_images insert     <- image_map.json
+  ├── 6. xhtml_to_docx.py         XHTML -> DOCX (Pandoc)
+  ├── 7. docx_to_epub.py          DOCX -> EPUB (Calibre)
+  └── 8. enrich_epub.py           Add metadata & accessibility
        |
        v
    Final EPUB
@@ -88,21 +76,38 @@ python scripts/preflight.py
 # 1. Export from InDesign (run inside InDesign Scripts panel)
 #    Use scripts/indesign/export_xhtml.jsx
 
-# 2. Process footnotes (two-phase: extract -> review -> insert)
+# 2. Run the full pipeline automatically
+python run.py
+
+# Or run individual steps:
+python run.py --only 2    # Extract footnotes only
+python run.py --from 6    # Start from XHTML->DOCX step
+python run.py --list      # See all available steps
+```
+
+### Manual Step-by-Step
+
+```bash
+# Build structured.json from XHTML
+python scripts/build_structure.py
+
+# Process footnotes (extract -> review -> insert)
 python scripts/process_footnotes.py extract
 # Review/edit data/temp/footnote_map.json if needed
 python scripts/process_footnotes.py insert
 
-# Or run both phases automatically:
-python scripts/process_footnotes.py auto
+# Process images (extract -> review -> insert)
+python scripts/process_images.py extract
+# Review/edit data/temp/image_map.json if needed
+python scripts/process_images.py insert
 
-# 3. Convert XHTML to DOCX
+# Convert XHTML to DOCX
 python scripts/xhtml_to_docx.py
 
-# 4. Convert DOCX to EPUB
+# Convert DOCX to EPUB
 python scripts/docx_to_epub.py
 
-# 5. Enrich EPUB with metadata and accessibility
+# Enrich EPUB with metadata and accessibility
 python scripts/enrich_epub.py
 ```
 
@@ -240,20 +245,26 @@ Image paths are automatically resolved to the `*-web-resources/image/` directori
 
 ```
 idml-xhtml-docx-epub/
+├── run.py                       # Pipeline runner (steps 1-8)
 ├── config.example.json          # Configuration template
 ├── requirements.txt             # Python dependencies
 ├── LICENSE                      # MIT License
 ├── CHANGELOG.md                 # Version history
 ├── scripts/
-│   ├── xhtml_to_docx.py        # Stage 3: XHTML -> DOCX
-│   ├── docx_to_epub.py         # Stage 4: DOCX -> EPUB
-│   ├── enrich_epub.py          # Stage 5: EPUB enrichment
+│   ├── build_structure.py       # Step 1: Build structured.json
+│   ├── process_footnotes.py     # Steps 2,4: Footnote extract/insert
+│   ├── process_images.py        # Steps 3,5: Image extract/insert
+│   ├── xhtml_to_docx.py        # Step 6: XHTML -> DOCX
+│   ├── docx_to_epub.py         # Step 7: DOCX -> EPUB
+│   ├── enrich_epub.py          # Step 8: EPUB enrichment
 │   ├── rtf_to_xhtml.py         # Utility: RTF -> XHTML
 │   ├── preflight.py            # Pre-flight environment check
-│   ├── process_footnotes.py    # Stage 2: Footnote extract/insert
+│   ├── utils/
+│   │   ├── __init__.py
+│   │   └── file_utils.py       # Atomic write, backup, JSON utilities
 │   └── indesign/
-│       ├── export_xhtml.jsx    # Stage 1: InDesign -> XHTML
-│       ├── export_xhtml_v2.jsx # Stage 1: Recursive variant
+│       ├── export_xhtml.jsx    # InDesign -> XHTML export
+│       ├── export_xhtml_v2.jsx # Recursive variant
 │       ├── indesign_utils.jsx  # Shared JSX utility functions
 │       └── export_fxl.jsx      # Fixed-layout HTML export
 ├── filters/
@@ -261,7 +272,7 @@ idml-xhtml-docx-epub/
 │   ├── fix_endnotes.lua        # Pandoc endnote fixer
 │   └── fix_links_epub.lua      # Pandoc link extension fixer
 ├── templates/
-│   ├── custom-reference.docx   # Pandoc reference document
+│   ├── custom-reference.docx   # Pandoc reference document (Russian)
 │   ├── styles.css              # Footnote styles
 │   └── template.opf            # OPF package template
 └── data/                        # Working directories (gitignored)
@@ -272,6 +283,10 @@ idml-xhtml-docx-epub/
     ├── covers/
     ├── rtf/
     └── temp/
+        ├── structured.json     # Intermediate structure (auto-generated)
+        ├── footnote_map.json   # Extracted footnotes (editable)
+        ├── image_map.json      # Extracted images (editable)
+        └── backups/            # Auto-backups of modified files
 ```
 
 ## License
