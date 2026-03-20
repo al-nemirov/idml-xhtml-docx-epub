@@ -14,6 +14,7 @@ import json
 import subprocess
 import tempfile
 import sys
+from html.parser import HTMLParser
 
 
 def load_config():
@@ -77,26 +78,126 @@ def replace_tags(content):
     return content
 
 
+class _HeadingMerger(HTMLParser):
+    """DOM-safe heading merger using Python's HTMLParser.
+
+    Merges consecutive headings of the same level (e.g., two <h2> tags in a row)
+    into a single heading, preserving all attributes and nested HTML safely.
+    """
+
+    def __init__(self):
+        super().__init__(convert_charrefs=False)
+        self.output = []
+        self._pending_tag = None    # Tag name of the pending heading (e.g., 'h2')
+        self._pending_attrs = None  # Attributes of the pending heading
+        self._pending_parts = []    # Inner HTML parts of the pending heading
+        self._depth = 0             # Nesting depth inside the pending heading
+
+    def _flush_pending(self):
+        """Write the pending heading to output."""
+        if self._pending_tag:
+            attr_str = ''
+            if self._pending_attrs:
+                attr_str = ' ' + ' '.join(
+                    f'{k}="{v}"' if v is not None else k
+                    for k, v in self._pending_attrs
+                )
+            inner = ''.join(self._pending_parts)
+            self.output.append(f'<{self._pending_tag}{attr_str}>{inner}</{self._pending_tag}>')
+            self._pending_tag = None
+            self._pending_attrs = None
+            self._pending_parts = []
+            self._depth = 0
+
+    def _is_heading(self, tag):
+        return tag in ('h1', 'h2', 'h3', 'h4', 'h5', 'h6')
+
+    def handle_starttag(self, tag, attrs):
+        raw = self.get_starttag_text() or ''
+        if self._pending_tag:
+            if tag == self._pending_tag and self._depth == 0:
+                # Same-level heading right after: merge (append space separator)
+                self._pending_parts.append(' ')
+                return
+            self._pending_parts.append(raw)
+            if self._is_heading(tag):
+                self._depth += 1
+        elif self._is_heading(tag):
+            self._pending_tag = tag
+            self._pending_attrs = attrs
+            self._pending_parts = []
+            self._depth = 0
+        else:
+            self.output.append(raw)
+
+    def handle_endtag(self, tag):
+        if self._pending_tag:
+            if tag == self._pending_tag and self._depth == 0:
+                # Don't flush yet; wait to see if the next tag is the same heading
+                return
+            if self._is_heading(tag) and self._depth > 0:
+                self._depth -= 1
+            self._pending_parts.append(f'</{tag}>')
+        else:
+            self.output.append(f'</{tag}>')
+
+    def handle_data(self, data):
+        if self._pending_tag:
+            # If only whitespace between headings, absorb it
+            if self._depth == 0 and not data.strip():
+                return
+            self._pending_parts.append(data)
+        else:
+            # Whitespace between potential headings: buffer it
+            self.output.append(data)
+
+    def handle_entityref(self, name):
+        text = f'&{name};'
+        if self._pending_tag:
+            self._pending_parts.append(text)
+        else:
+            self.output.append(text)
+
+    def handle_charref(self, name):
+        text = f'&#{name};'
+        if self._pending_tag:
+            self._pending_parts.append(text)
+        else:
+            self.output.append(text)
+
+    def handle_comment(self, data):
+        text = f'<!--{data}-->'
+        if self._pending_tag:
+            self._pending_parts.append(text)
+        else:
+            self.output.append(text)
+
+    def handle_decl(self, decl):
+        self._flush_pending()
+        self.output.append(f'<!{decl}>')
+
+    def handle_pi(self, data):
+        self._flush_pending()
+        self.output.append(f'<?{data}>')
+
+    def close(self):
+        super().close()
+        self._flush_pending()
+
+    def get_result(self):
+        self._flush_pending()
+        return ''.join(self.output)
+
+
 def merge_headings(content):
     """Merge consecutive headings of the same level into a single heading.
 
-    Handles headings with or without attributes (e.g., <h2 class="...">) by
-    stripping the opening tag with attributes and keeping only the first tag.
+    Uses a DOM-safe HTML parser instead of regex to correctly handle
+    headings with attributes, nested elements, and special characters.
     """
-    for heading_level in range(2, 7):
-        tag = f'h{heading_level}'
-        # Match two consecutive headings (with optional attributes on the tag)
-        pattern = re.compile(
-            rf'<{tag}(\s[^>]*)?>(.+?)</{tag}>\s*<{tag}(\s[^>]*)?>(.+?)</{tag}>',
-            re.DOTALL
-        )
-        while pattern.search(content):
-            # Merge: keep first tag (with its attributes), combine text, close
-            content = pattern.sub(
-                rf'<{tag}\1>\2 \4</{tag}>',
-                content
-            )
-    return content
+    parser = _HeadingMerger()
+    parser.feed(content)
+    return parser.get_result()
 
 
 def process_footnotes(content):
@@ -147,16 +248,18 @@ def fix_image_path(match, filename, resource_dir):
     """Fix image paths to point to the correct resource directory.
 
     Uses the original basename from the src attribute without modifying it,
-    so the path matches the actual file on disk.
+    so the path matches the actual file on disk. Always uses POSIX forward
+    slashes for XHTML/HTML compatibility (even on Windows).
     """
     old_path = match.group(1)
     basename = os.path.basename(old_path)
-    new_path = os.path.join(
-        resource_dir,
+    # Use POSIX forward slashes for URLs in XHTML (os.path.join uses \ on Windows)
+    new_path = '/'.join([
+        resource_dir.replace('\\', '/'),
         f"{filename}-web-resources",
         'image',
-        basename
-    )
+        basename,
+    ])
     return f'src="{new_path}"'
 
 
@@ -298,6 +401,9 @@ def main():
             errors += 1
 
     print(f'\nConversion completed: {success} successful, {errors} errors')
+
+    if errors > 0:
+        sys.exit(1)
 
 
 if __name__ == '__main__':

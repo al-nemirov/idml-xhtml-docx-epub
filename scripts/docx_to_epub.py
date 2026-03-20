@@ -131,6 +131,14 @@ def main():
         print(f'Error: metadata file not found: {metadata_xlsx}')
         sys.exit(1)
 
+    # Validate required columns
+    required_columns = ['ISBN', 'Title', 'Authors', 'Annotation', 'Translators']
+    missing_cols = [c for c in required_columns if c not in metadata_df.columns]
+    if missing_cols:
+        print(f'Error: missing required columns in {metadata_xlsx}: {", ".join(missing_cols)}')
+        print(f'Expected columns: {", ".join(required_columns)}')
+        sys.exit(1)
+
     # Create CSS file for footnote styles
     css_content = """
 sup {
@@ -177,6 +185,9 @@ sup {
             errors += 1
 
     print(f'\nConversion completed: {success} successful, {errors} errors')
+
+    if errors > 0:
+        sys.exit(1)
 
 
 if __name__ == '__main__':

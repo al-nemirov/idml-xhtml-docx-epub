@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2026-03-20
+
+### Fixed
+
+- `xhtml_to_docx.py`: Replaced regex-based `merge_headings()` with DOM-safe `_HeadingMerger` class using Python's `HTMLParser` — correctly handles attributes, nested elements, and special characters
+- `xhtml_to_docx.py`: Image paths now use POSIX forward slashes (`/`) instead of `os.path.join()` which produces backslashes on Windows, breaking XHTML/HTML URLs
+- `xhtml_to_docx.py`: Now exits with code 1 on conversion errors (was silently succeeding)
+- `docx_to_epub.py`: Now exits with code 1 on conversion errors
+- `enrich_epub.py`: Now exits with code 1 on enrichment errors, tracks error count
+- `rtf_to_xhtml.py`: Now exits with code 1 on conversion errors
+
+### Added
+
+- `docx_to_epub.py`: Excel column validation — fails fast with clear message if required columns (ISBN, Title, Authors, Annotation, Translators) are missing
+- `enrich_epub.py`: Excel column validation — same check as docx_to_epub.py
+- `tests/smoke_test.py`: End-to-end smoke test that creates fixtures, runs pipeline stages (preflight, build_structure, footnote extract/insert, xhtml_to_docx), and verifies outputs including reproducibility check
+
 ## [3.0.0] - 2026-03-20
 
 ### Added

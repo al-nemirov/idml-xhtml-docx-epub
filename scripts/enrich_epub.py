@@ -408,6 +408,14 @@ def main():
         print(f'Error: metadata file not found: {metadata_xlsx}')
         sys.exit(1)
 
+    # Validate required columns
+    required_columns = ['ISBN', 'Title', 'Authors', 'Annotation', 'Translators']
+    missing_cols = [c for c in required_columns if c not in metadata_df.columns]
+    if missing_cols:
+        print(f'Error: missing required columns in {metadata_xlsx}: {", ".join(missing_cols)}')
+        print(f'Expected columns: {", ".join(required_columns)}')
+        sys.exit(1)
+
     epub_files = [f for f in os.listdir(epub_dir) if f.endswith('.epub')]
     if not epub_files:
         print(f'No .epub files found in {epub_dir}')
@@ -415,6 +423,7 @@ def main():
 
     print(f'Processing {len(epub_files)} EPUB file(s)...\n')
 
+    errors = 0
     for filename in epub_files:
         epub_path = os.path.join(epub_dir, filename)
         output_path = os.path.join(output_dir, filename)
@@ -422,8 +431,12 @@ def main():
             process_epub(epub_path, output_path, metadata_df, config)
         except Exception as e:
             print(f'  Error processing {filename}: {e}')
+            errors += 1
 
     print('\nMetadata enrichment completed!')
+
+    if errors > 0:
+        sys.exit(1)
 
 
 if __name__ == '__main__':
