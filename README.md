@@ -156,6 +156,42 @@ All paths and settings are managed via `config.json`. See `config.example.json` 
 | `language` | Book language code | `en` |
 | `epub_version` | EPUB specification version | `3` |
 
+## InDesign Document Preparation
+
+Before running the pipeline, prepare your InDesign documents for optimal export:
+
+### Paragraph Styles (Critical)
+
+The pipeline maps InDesign paragraph style names to HTML headings. For best results, rename your InDesign paragraph styles to match the expected names:
+
+| InDesign Style | HTML Output | Notes |
+|---|---|---|
+| `Heading 1` | `<h1>` | Used by JSX scripts for heading detection |
+| `Heading 2` | `<h2>` | |
+| `Heading 3` &ndash; `Heading 6` | `<h3>` &ndash; `<h6>` | |
+| `Часть` (Part) | `<h2>` | Russian style names in XHTML stage |
+| `Глава` (Chapter) | `<h3>` | Russian style names in XHTML stage |
+| `Заголовок 2`&ndash;`6` | `<h2>`&ndash;`<h6>` | Russian style names in XHTML stage |
+| `Цитата` (Quote) | `<blockquote>` | |
+
+> **Tip**: Renaming InDesign styles to `Heading 1`, `Heading 2`, etc. before export ensures the JSX scripts correctly identify heading levels. The Python XHTML stage also supports Russian-named styles for localized InDesign templates.
+
+### Images (Important)
+
+Images are only exported correctly if they are **anchored within text frames** (inline images). Floating images placed independently on the page will **not** be included in the XHTML export.
+
+To ensure images are exported:
+1. **Anchor images to text** &mdash; Right-click the image frame in InDesign, choose Object &rarr; Anchored Object &rarr; Insert, or paste the image directly into a text frame at the desired position
+2. **Use inline or above-line anchoring** &mdash; Custom-positioned anchored objects may not export correctly
+3. **Keep image files linked** &mdash; Embedded images work, but linked files produce better quality
+4. **Check the Links panel** &mdash; Ensure all images show "OK" status (no missing or modified links)
+
+After export, images are saved in `*-web-resources/image/` subdirectories alongside each XHTML file.
+
+### Footnotes
+
+InDesign footnotes are automatically detected and processed by the pipeline. The JSX scripts convert them to `div.id="footnote-N"` format, which the Python footnote processor then handles using the extract/insert approach.
+
 ## Pipeline Stages
 
 ### Stage 1: InDesign Export (JSX)
@@ -176,6 +212,8 @@ The `scripts/indesign/` folder contains ExtendScript (JSX) files that run inside
 ### Stage 3: XHTML to DOCX
 
 **`xhtml_to_docx.py`** cleans InDesign-specific tags, maps CSS classes to semantic HTML headings (Russian style names match InDesign source), merges consecutive headings, fixes image paths, and converts to DOCX via Pandoc with custom Lua filters.
+
+Image paths are automatically resolved to the `*-web-resources/image/` directories created during InDesign export. Spaces in filenames are replaced with underscores for compatibility.
 
 ### Stage 4: DOCX to EPUB
 
