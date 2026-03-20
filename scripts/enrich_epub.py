@@ -305,15 +305,14 @@ def process_epub(epub_path, output_path, metadata_df, config):
                 'schema:accessMode': 'textual',
                 'schema:accessModeSufficient': 'textual',
                 'schema:accessibilitySummary': 'This book provides an accessible reading experience.',
-                # Excel column names are in Russian to match the source spreadsheet
-                'title': metadata_row['Произведение'],          # Title
-                'creator': metadata_row['Авторы'],              # Authors
-                'description': metadata_row['Аннотация'],       # Annotation
+                'title': metadata_row['Title'],
+                'creator': metadata_row['Authors'],
+                'description': metadata_row['Annotation'],
                 'translator': (
-                    metadata_row['Переводчики']
-                    if not pd.isna(metadata_row['Переводчики'])
+                    metadata_row['Translators']
+                    if not pd.isna(metadata_row['Translators'])
                     else ''
-                ),  # Translators
+                ),
                 'publisher_notice': publisher_notice,
             }
         else:
