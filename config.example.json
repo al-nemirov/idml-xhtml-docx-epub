@@ -1,0 +1,16 @@
+{
+    "paths": {
+        "xhtml_dir": "./data/xhtml",
+        "docx_dir": "./data/docx",
+        "epub_dir": "./data/epub",
+        "output_dir": "./data/output",
+        "cover_dir": "./data/covers",
+        "temp_dir": "./data/temp"
+    },
+    "metadata_file": "books.xlsx",
+    "reference_doc": "templates/custom-reference.docx",
+    "lua_filter": "filters/footnote_filter.lua",
+    "publisher": "Your Publisher Name",
+    "language": "en",
+    "epub_version": "3"
+}
