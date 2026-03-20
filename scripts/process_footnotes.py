@@ -356,7 +356,8 @@ def insert_phase(config):
     start_time = time.time()
 
     input_dir = config['paths']['xhtml_dir']
-    output_dir = config['paths'].get('output_dir', input_dir)
+    # Insert back into xhtml_dir (same directory as extract) so Stage 3 can find them
+    output_dir = config['paths']['xhtml_dir']
     resource_dir = config['paths']['xhtml_dir']
     temp_dir = config['paths']['temp_dir']
 

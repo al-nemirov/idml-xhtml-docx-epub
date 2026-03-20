@@ -82,6 +82,9 @@ Automates the end-to-end process of converting books from Adobe InDesign source 
 ## Quick Start
 
 ```bash
+# 0. Validate your environment
+python scripts/preflight.py
+
 # 1. Export from InDesign (run inside InDesign Scripts panel)
 #    Use scripts/indesign/export_xhtml.jsx
 
@@ -225,7 +228,7 @@ Image paths are automatically resolved to the `*-web-resources/image/` directori
 
 ### Utility: RTF to XHTML
 
-**`epub_to_html.py`** converts RTF files to XHTML format using pypandoc, extracting embedded images and separating CSS styles. Useful when source documents arrive in RTF format.
+**`rtf_to_xhtml.py`** converts RTF files to XHTML format using pypandoc, extracting embedded images and separating CSS styles. Useful when source documents arrive in RTF format.
 
 ### Pandoc Lua Filters
 
@@ -245,11 +248,13 @@ idml-xhtml-docx-epub/
 │   ├── xhtml_to_docx.py        # Stage 3: XHTML -> DOCX
 │   ├── docx_to_epub.py         # Stage 4: DOCX -> EPUB
 │   ├── enrich_epub.py          # Stage 5: EPUB enrichment
-│   ├── epub_to_html.py         # Utility: RTF -> XHTML
+│   ├── rtf_to_xhtml.py         # Utility: RTF -> XHTML
+│   ├── preflight.py            # Pre-flight environment check
 │   ├── process_footnotes.py    # Stage 2: Footnote extract/insert
 │   └── indesign/
 │       ├── export_xhtml.jsx    # Stage 1: InDesign -> XHTML
 │       ├── export_xhtml_v2.jsx # Stage 1: Recursive variant
+│       ├── indesign_utils.jsx  # Shared JSX utility functions
 │       └── export_fxl.jsx      # Fixed-layout HTML export
 ├── filters/
 │   ├── footnote_filter.lua     # Pandoc footnote filter

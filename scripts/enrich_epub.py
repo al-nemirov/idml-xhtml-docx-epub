@@ -38,6 +38,87 @@ def load_config():
         sys.exit(1)
 
 
+def _find_opf_path(temp_dir):
+    """Find the OPF file path from META-INF/container.xml (EPUB standard)."""
+    container_path = os.path.join(temp_dir, 'META-INF', 'container.xml')
+    if os.path.exists(container_path):
+        try:
+            tree = ET.parse(container_path)
+            root = tree.getroot()
+            ns = {'container': 'urn:oasis:names:tc:opendocument:xmlns:container'}
+            rootfile = root.find('.//container:rootfile', ns)
+            if rootfile is not None:
+                opf_rel = rootfile.get('full-path')
+                if opf_rel:
+                    return os.path.join(temp_dir, opf_rel.replace('/', os.sep))
+        except ET.XMLSyntaxError:
+            pass
+
+    # Fallback: search for .opf files
+    for dirpath, _, files in os.walk(temp_dir):
+        for f in files:
+            if f.endswith('.opf'):
+                return os.path.join(dirpath, f)
+    return None
+
+
+def _find_files_from_opf(opf_path):
+    """Discover key EPUB files from the OPF manifest instead of filename guessing.
+
+    Returns dict with keys: nav_path, titlepage_path, stylesheet_path, content_paths.
+    """
+    result = {
+        'nav_path': None,
+        'titlepage_path': None,
+        'stylesheet_path': None,
+        'content_paths': [],
+    }
+
+    if not opf_path or not os.path.exists(opf_path):
+        return result
+
+    opf_dir = os.path.dirname(opf_path)
+
+    try:
+        parser = ET.XMLParser(ns_clean=True, recover=True)
+        tree = ET.parse(opf_path, parser)
+        root = tree.getroot()
+
+        ns = {'opf': NS_OPF}
+
+        # Scan manifest items
+        manifest = root.find('opf:manifest', ns)
+        if manifest is None:
+            return result
+
+        for item in manifest.findall('opf:item', ns):
+            href = item.get('href', '')
+            media_type = item.get('media-type', '')
+            properties = item.get('properties', '')
+            item_path = os.path.normpath(os.path.join(opf_dir, href))
+
+            # Navigation document (EPUB3 property)
+            if 'nav' in properties:
+                result['nav_path'] = item_path
+
+            # Stylesheet
+            if media_type == 'text/css' and result['stylesheet_path'] is None:
+                result['stylesheet_path'] = item_path
+
+            # XHTML content documents
+            if media_type in ('application/xhtml+xml', 'text/html'):
+                result['content_paths'].append(item_path)
+                # Check for titlepage by href pattern or properties
+                basename = os.path.basename(href).lower()
+                if 'titlepage' in basename or 'title' in basename:
+                    result['titlepage_path'] = item_path
+
+    except ET.XMLSyntaxError:
+        pass
+
+    return result
+
+
 def adjust_titlepage(titlepage_path, metadata):
     """Add title, author, annotation, and publisher info to the EPUB title page."""
     parser = ET.XMLParser(ns_clean=True, recover=True)
@@ -74,7 +155,10 @@ def adjust_titlepage(titlepage_path, metadata):
 
 
 def add_metadata_to_opf(opf_path, metadata, language):
-    """Add custom metadata entries (accessibility, etc.) to the OPF package file."""
+    """Add EPUB3 metadata entries (accessibility, etc.) to the OPF package file.
+
+    Uses EPUB3 <meta property="..."> format instead of EPUB2 <meta name="..." content="...">.
+    """
     parser = ET.XMLParser(ns_clean=True, recover=True)
     tree = ET.parse(opf_path, parser)
     root = tree.getroot()
@@ -88,7 +172,9 @@ def add_metadata_to_opf(opf_path, metadata, language):
         for key, value in metadata.items():
             if key in skip_keys:
                 continue
-            ET.SubElement(metadata_elem, 'meta', attrib={'name': key, 'content': str(value)})
+            # EPUB3 format: <meta property="schema:...">value</meta>
+            meta = ET.SubElement(metadata_elem, 'meta', attrib={'property': key})
+            meta.text = str(value)
 
     if '{http://www.w3.org/XML/1998/namespace}lang' not in root.attrib:
         root.set('{http://www.w3.org/XML/1998/namespace}lang', language)
@@ -184,6 +270,14 @@ def remove_classes_from_headings(filepath):
     tree.write(filepath, encoding='utf-8', xml_declaration=True)
 
 
+def _normalize_isbn(value):
+    """Normalize ISBN value: strip trailing .0 from Excel float representation."""
+    s = str(value).strip()
+    if s.endswith('.0'):
+        s = s[:-2]
+    return s
+
+
 def process_epub(epub_path, output_path, metadata_df, config):
     """Process a single EPUB file: extract, enrich, repackage."""
     publisher = config.get('publisher', 'Your Publisher Name')
@@ -199,8 +293,9 @@ def process_epub(epub_path, output_path, metadata_df, config):
         with zipfile.ZipFile(epub_path, 'r') as epub_zip:
             epub_zip.extractall(temp_dir)
 
-        # Build metadata from Excel
-        matching_metadata = metadata_df[metadata_df['ISBN'].astype(str) == book_isbn]
+        # Build metadata from Excel (normalize ISBN to handle float values)
+        normalized_isbns = metadata_df['ISBN'].apply(_normalize_isbn)
+        matching_metadata = metadata_df[normalized_isbns == book_isbn]
 
         if not matching_metadata.empty:
             metadata_row = matching_metadata.iloc[0]
@@ -232,41 +327,48 @@ def process_epub(epub_path, output_path, metadata_df, config):
                 'publisher_notice': publisher_notice,
             }
 
-        # Find and process key files
-        opf_path = None
-        nav_path = None
-        titlepage_path = None
-        stylesheet_path = None
+        # Find OPF and discover key files from manifest
+        opf_path = _find_opf_path(temp_dir)
+        epub_files = _find_files_from_opf(opf_path)
 
-        for dirpath, _, files in os.walk(temp_dir):
-            for file in files:
-                file_path = os.path.join(dirpath, file)
-                if file == 'nav.xhtml':
-                    nav_path = file_path
-                    add_aria_role_to_nav(nav_path)
-                if file.endswith('.opf'):
-                    opf_path = file_path
-                elif file.endswith(('.html', '.xhtml')):
-                    if 'titlepage' in file_path:
-                        titlepage_path = file_path
-                elif file == 'stylesheet.css':
-                    stylesheet_path = file_path
+        nav_path = epub_files['nav_path']
+        titlepage_path = epub_files['titlepage_path']
+        stylesheet_path = epub_files['stylesheet_path']
+        content_paths = epub_files['content_paths']
 
-        if titlepage_path:
+        # Fallback: scan filesystem if OPF discovery failed
+        if not nav_path or not opf_path:
+            for dirpath, _, files in os.walk(temp_dir):
+                for file in files:
+                    file_path = os.path.join(dirpath, file)
+                    if file == 'nav.xhtml' and not nav_path:
+                        nav_path = file_path
+                    if file.endswith('.opf') and not opf_path:
+                        opf_path = file_path
+                    elif file.endswith(('.html', '.xhtml')):
+                        if 'titlepage' in file_path and not titlepage_path:
+                            titlepage_path = file_path
+                        if file_path not in content_paths:
+                            content_paths.append(file_path)
+                    elif file.endswith('.css') and not stylesheet_path:
+                        stylesheet_path = file_path
+
+        if nav_path and os.path.exists(nav_path):
+            add_aria_role_to_nav(nav_path)
+
+        if titlepage_path and os.path.exists(titlepage_path):
             adjust_titlepage(titlepage_path, custom_metadata)
 
-        if opf_path:
+        if opf_path and os.path.exists(opf_path):
             add_metadata_to_opf(opf_path, custom_metadata, language)
 
-        if stylesheet_path:
+        if stylesheet_path and os.path.exists(stylesheet_path):
             update_styles(stylesheet_path)
 
         # Remove classes from headings in all XHTML files
-        for dirpath, _, files in os.walk(temp_dir):
-            for file in files:
-                if file.endswith(('.html', '.xhtml')):
-                    filepath = os.path.join(dirpath, file)
-                    remove_classes_from_headings(filepath)
+        for file_path in content_paths:
+            if os.path.exists(file_path):
+                remove_classes_from_headings(file_path)
 
         # Repackage the EPUB (mimetype must be first entry, stored uncompressed)
         with zipfile.ZipFile(output_path, 'w') as epub_zip:
