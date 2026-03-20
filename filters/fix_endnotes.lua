@@ -16,11 +16,13 @@ end
 function Div(el)
   if el.classes:includes("endnotes") then
     for i, item in ipairs(el.content) do
-      if item.t == "Para" and item.content[1].t == "Span" then
-        local id = item.content[1].attributes.id
-        local unique_id = id .. "_" .. i
-        endnotes[unique_id] = el.content[i]
-        el.content[i] = pandoc.Null()
+      if item.t == "Para" and #item.content > 0 and item.content[1].t == "Span" then
+        local id = item.content[1].attributes and item.content[1].attributes.id or ""
+        if id ~= "" then
+          local unique_id = id .. "_" .. i
+          endnotes[unique_id] = el.content[i]
+          el.content[i] = pandoc.Null()
+        end
       end
     end
   end
@@ -28,12 +30,19 @@ function Div(el)
 end
 
 function Note(el)
-  local id = el.content[1].identifier
-  local unique_id = id .. "_" .. el.number
+  if #el.content == 0 then return el end
+
+  local first_block = el.content[1]
+  local id = first_block.identifier or ""
+  local unique_id = id .. "_" .. (el.number or 0)
+
   if endnotes[unique_id] then
-    -- Use #footnote- format for the backlink reference
-    local backlink = pandoc.Link{t = "Link", content = endnotes[unique_id].content, attributes = {url = "#footnote-" .. id .. "-backlink"}}
-    return pandoc.Div({backlink}, {class="endnote"})
+    local backlink_url = "#footnote-" .. id .. "-backlink"
+    local link = pandoc.Link(
+      endnotes[unique_id].content,
+      backlink_url
+    )
+    return pandoc.Div({pandoc.Para({link})}, {class = "endnote"})
   else
     return el
   end

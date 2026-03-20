@@ -5,11 +5,14 @@
         "epub_dir": "./data/epub",
         "output_dir": "./data/output",
         "cover_dir": "./data/covers",
-        "temp_dir": "./data/temp"
+        "temp_dir": "./data/temp",
+        "rtf_dir": "./data/rtf"
     },
     "metadata_file": "books.xlsx",
     "reference_doc": "templates/custom-reference.docx",
     "lua_filter": "filters/footnote_filter.lua",
+    "lua_filter_endnotes": "filters/fix_endnotes.lua",
+    "lua_filter_links": "filters/fix_links_epub.lua",
     "publisher": "Your Publisher Name",
     "language": "en",
     "epub_version": "3"

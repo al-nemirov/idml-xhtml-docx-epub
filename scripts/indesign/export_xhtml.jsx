@@ -37,7 +37,8 @@ try {
       // 1. Export as IDML (intermediate markup format)
       var idmlFile = new File(file.fsName.replace(".indd", ".idml"));
       var sourceDoc = app.open(file);
-      sourceDoc.save(idmlFile, false, "", true);
+      sourceDoc.exportFile(ExportFormat.INDESIGN_MARKUP, idmlFile);
+      sourceDoc.close(SaveOptions.NO);
 
       // 2. Open the IDML file
       var doc = app.open(idmlFile);
