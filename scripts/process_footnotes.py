@@ -33,6 +33,10 @@ import sys
 import shutil
 import time
 
+# Add parent to path for utils import
+sys.path.insert(0, os.path.dirname(__file__))
+from utils.file_utils import save_json, load_json, backup_file
+
 
 def load_config():
     """Load configuration from config.json in the project root."""
@@ -192,6 +196,9 @@ def extract_phase(config):
     for filename in xhtml_files:
         input_path = os.path.join(input_dir, filename)
 
+        # Backup XHTML before modification
+        backup_file(input_path, backup_dir=os.path.join(temp_dir, 'backups'))
+
         with open(input_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
@@ -227,10 +234,9 @@ def extract_phase(config):
         'footnotes': all_footnotes,
     }
 
-    # Save the footnote map
+    # Save the footnote map (atomic write to prevent corruption)
     map_path = os.path.join(temp_dir, 'footnote_map.json')
-    with open(map_path, 'w', encoding='utf-8') as f:
-        json.dump(map_data, f, ensure_ascii=False, indent=2)
+    save_json(map_path, map_data)
 
     duration = time.time() - start_time
 
@@ -362,14 +368,11 @@ def insert_phase(config):
     temp_dir = config['paths']['temp_dir']
 
     map_path = os.path.join(temp_dir, 'footnote_map.json')
-    if not os.path.exists(map_path):
+    map_data = load_json(map_path)
+    if map_data is None:
         print(f'Error: footnote_map.json not found at {map_path}')
         print('Run the extract phase first: python process_footnotes.py extract')
         return False
-
-    # Load the footnote map
-    with open(map_path, 'r', encoding='utf-8') as f:
-        map_data = json.load(f)
 
     all_footnotes = map_data.get('footnotes', [])
 

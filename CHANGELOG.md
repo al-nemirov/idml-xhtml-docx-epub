@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-03-20
+
+### Added
+
+- **Pipeline runner** (`run.py`): Execute all pipeline steps in sequence with `--from`, `--to`, `--only` options, built-in preflight check, and step-by-step progress reporting
+- **Atomic JSON write** (`scripts/utils/file_utils.py`): Safe file writes using tmp+fsync+rename pattern (prevents corruption on interruption), with Windows retry for locked files
+- **Structured JSON** (`scripts/build_structure.py`): Parses XHTML into `structured.json` intermediate format — single source of truth for paragraphs, headings, images, footnotes
+- **Image anchor system** (`scripts/process_images.py`): Two-phase extract/insert for images using `{{img_N}}` anchors (same pattern as footnotes). Users can review, edit alt text, remap paths, or reject images between phases
+- **Backup system**: Automatic timestamped backups before any XHTML modification (footnote extract, image extract). Backups stored in `data/temp/backups/`
+- `scripts/utils/` package with `atomic_json_write()`, `backup_file()`, `load_json()`, `save_json()` utilities
+- `process_footnotes.py` now uses atomic JSON writes and creates backups before modifying XHTML
+
+### Changed
+
+- Pipeline is now an 8-step process managed by `run.py` (previously manual script execution)
+- `process_footnotes.py` uses `save_json()` (atomic) instead of plain `json.dump()`
+- `process_footnotes.py` uses `load_json()` with error handling instead of raw `json.load()`
+
 ## [2.1.0] - 2026-03-20
 
 ### Fixed
