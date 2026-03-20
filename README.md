@@ -21,7 +21,13 @@ Automates the end-to-end process of converting books from Adobe InDesign source 
    XHTML files
        |
        v
- [process_footnotes.py]  Convert InDesign footnotes to endnotes
+ [process_footnotes.py extract]   Extract footnotes -> footnote_map.json
+       |
+       v
+ (optional: review/edit footnotes in footnote_map.json)
+       |
+       v
+ [process_footnotes.py insert]    Insert footnotes back as endnotes
        |
        v
  [xhtml_to_docx.py]      Clean tags, map styles, convert via Pandoc
@@ -79,8 +85,13 @@ Automates the end-to-end process of converting books from Adobe InDesign source 
 # 1. Export from InDesign (run inside InDesign Scripts panel)
 #    Use scripts/indesign/export_xhtml.jsx
 
-# 2. Process footnotes
-python scripts/process_footnotes.py
+# 2. Process footnotes (two-phase: extract -> review -> insert)
+python scripts/process_footnotes.py extract
+# Review/edit data/temp/footnote_map.json if needed
+python scripts/process_footnotes.py insert
+
+# Or run both phases automatically:
+python scripts/process_footnotes.py auto
 
 # 3. Convert XHTML to DOCX
 python scripts/xhtml_to_docx.py
@@ -91,6 +102,37 @@ python scripts/docx_to_epub.py
 # 5. Enrich EPUB with metadata and accessibility
 python scripts/enrich_epub.py
 ```
+
+## Footnote Processing
+
+The footnote system uses a two-phase extraction/insertion approach:
+
+### Phase 1: Extract
+
+```bash
+python scripts/process_footnotes.py extract
+```
+
+- Scans all XHTML files for InDesign footnotes (`div.id="footnote-N"`)
+- Saves footnote text and metadata to `data/temp/footnote_map.json`
+- Replaces footnote bodies in XHTML with `{{footnote_N}}` anchors
+
+### Manual Review (Optional)
+
+Open `data/temp/footnote_map.json` and review/edit extracted footnotes:
+- Fix OCR errors in footnote text
+- Adjust formatting
+- Remove unwanted footnotes
+
+### Phase 2: Insert
+
+```bash
+python scripts/process_footnotes.py insert
+```
+
+- Reads the (optionally edited) footnote map
+- Replaces `{{footnote_N}}` anchors with properly formatted endnotes
+- Rewrites footnote reference links to standard `#fn:N` format
 
 ## Configuration
 
@@ -104,9 +146,12 @@ All paths and settings are managed via `config.json`. See `config.example.json` 
 | `paths.output_dir` | Final output directory for enriched EPUBs | `./data/output` |
 | `paths.cover_dir` | Directory containing cover images (ISBN.jpg) | `./data/covers` |
 | `paths.temp_dir` | Temporary working directory | `./data/temp` |
+| `paths.rtf_dir` | Directory for RTF source files | `./data/rtf` |
 | `metadata_file` | Excel file with book metadata | `books.xlsx` |
 | `reference_doc` | Pandoc reference DOCX for styling | `templates/custom-reference.docx` |
 | `lua_filter` | Pandoc Lua filter for footnotes | `filters/footnote_filter.lua` |
+| `lua_filter_endnotes` | Pandoc Lua filter for endnotes | `filters/fix_endnotes.lua` |
+| `lua_filter_links` | Pandoc Lua filter for link extensions | `filters/fix_links_epub.lua` |
 | `publisher` | Publisher name for EPUB metadata | `Your Publisher Name` |
 | `language` | Book language code | `en` |
 | `epub_version` | EPUB specification version | `3` |
@@ -123,11 +168,14 @@ The `scripts/indesign/` folder contains ExtendScript (JSX) files that run inside
 
 ### Stage 2: Footnote Processing
 
-**`process_footnotes.py`** converts InDesign-style inline footnotes into standard endnote format, rewrites cross-file footnote links, and copies associated image resources.
+**`process_footnotes.py`** uses a two-phase extract/insert approach:
+1. **Extract**: Pulls footnotes from XHTML into `footnote_map.json` with `{{footnote_N}}` anchors
+2. **Review**: User can edit the JSON map to fix or adjust footnotes
+3. **Insert**: Replaces anchors with properly formatted endnotes
 
 ### Stage 3: XHTML to DOCX
 
-**`xhtml_to_docx.py`** cleans InDesign-specific tags, maps CSS classes to semantic HTML headings, merges consecutive headings, processes footnotes, fixes image paths, and converts to DOCX via Pandoc with custom Lua filters.
+**`xhtml_to_docx.py`** cleans InDesign-specific tags, maps CSS classes to semantic HTML headings (Russian style names match InDesign source), merges consecutive headings, fixes image paths, and converts to DOCX via Pandoc with custom Lua filters.
 
 ### Stage 4: DOCX to EPUB
 
@@ -136,6 +184,10 @@ The `scripts/indesign/` folder contains ExtendScript (JSX) files that run inside
 ### Stage 5: EPUB Enrichment
 
 **`enrich_epub.py`** unpacks each EPUB to add accessibility metadata (ARIA roles, schema.org attributes), updates the title page with book information, enhances stylesheets, and removes InDesign class artifacts from headings.
+
+### Utility: RTF to XHTML
+
+**`epub_to_html.py`** converts RTF files to XHTML format using pypandoc, extracting embedded images and separating CSS styles. Useful when source documents arrive in RTF format.
 
 ### Pandoc Lua Filters
 
@@ -156,7 +208,7 @@ idml-xhtml-docx-epub/
 │   ├── docx_to_epub.py         # Stage 4: DOCX -> EPUB
 │   ├── enrich_epub.py          # Stage 5: EPUB enrichment
 │   ├── epub_to_html.py         # Utility: RTF -> XHTML
-│   ├── process_footnotes.py    # Stage 2: Footnote processing
+│   ├── process_footnotes.py    # Stage 2: Footnote extract/insert
 │   └── indesign/
 │       ├── export_xhtml.jsx    # Stage 1: InDesign -> XHTML
 │       ├── export_xhtml_v2.jsx # Stage 1: Recursive variant
@@ -175,6 +227,7 @@ idml-xhtml-docx-epub/
     ├── epub/
     ├── output/
     ├── covers/
+    ├── rtf/
     └── temp/
 ```
 
