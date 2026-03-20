@@ -1,5 +1,5 @@
-lxml
-pandas
-openpyxl
-beautifulsoup4
-pypandoc
+lxml>=4.9,<6
+pandas>=1.5,<3
+openpyxl>=3.0,<4
+beautifulsoup4>=4.12,<5
+pypandoc>=1.11,<2

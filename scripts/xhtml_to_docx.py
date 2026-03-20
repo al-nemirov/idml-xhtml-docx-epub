@@ -81,17 +81,22 @@ def replace_tags(content):
 
 
 def merge_headings(content):
-    """Merge consecutive headings of the same level into a single heading."""
+    """Merge consecutive headings of the same level into a single heading.
+
+    Handles headings with or without attributes (e.g., <h2 class="...">) by
+    stripping the opening tag with attributes and keeping only the first tag.
+    """
     for heading_level in range(2, 7):
+        tag = f'h{heading_level}'
+        # Match two consecutive headings (with optional attributes on the tag)
         pattern = re.compile(
-            rf'(<h{heading_level}[^>]*>.*?</h{heading_level}>)\s*'
-            rf'(<h{heading_level}[^>]*>.*?</h{heading_level}>)',
+            rf'<{tag}(\s[^>]*)?>(.+?)</{tag}>\s*<{tag}(\s[^>]*)?>(.+?)</{tag}>',
             re.DOTALL
         )
         while pattern.search(content):
+            # Merge: keep first tag (with its attributes), combine text, close
             content = pattern.sub(
-                lambda m: m.group(1).replace(f'</h{heading_level}>', ' ')
-                + m.group(2).replace(f'<h{heading_level}>', ''),
+                rf'<{tag}\1>\2 \4</{tag}>',
                 content
             )
     return content
@@ -131,22 +136,30 @@ def process_footnotes(content):
         flags=re.DOTALL
     )
 
-    if '<ol class="footnotes-list">' not in content:
+    # Only add footnotes-list container if there are actual footnotes
+    has_footnotes = bool(re.search(
+        r'<li id="fn:\d+">', content
+    ))
+    if has_footnotes and '<ol class="footnotes-list">' not in content:
         content += '<ol class="footnotes-list">{footnotes}</ol>'
 
     return content
 
 
 def fix_image_path(match, filename, resource_dir):
-    """Fix image paths to point to the correct resource directory."""
+    """Fix image paths to point to the correct resource directory.
+
+    Uses the original basename from the src attribute without modifying it,
+    so the path matches the actual file on disk.
+    """
     old_path = match.group(1)
+    basename = os.path.basename(old_path)
     new_path = os.path.join(
         resource_dir,
         f"{filename}-web-resources",
         'image',
-        os.path.basename(old_path)
+        basename
     )
-    new_path = new_path.replace(' ', '_')
     return f'src="{new_path}"'
 
 
@@ -160,8 +173,18 @@ def replace_html_links(content):
     return content
 
 
-def process_file(input_path, output_path, resource_dir, reference_doc, lua_filter):
-    """Process a single XHTML file: clean, transform, and convert to DOCX via Pandoc."""
+def process_file(input_path, output_path, resource_dir, reference_doc,
+                 lua_filters, extra_resource_paths=None):
+    """Process a single XHTML file: clean, transform, and convert to DOCX via Pandoc.
+
+    Args:
+        input_path: Path to the source XHTML file.
+        output_path: Path for the output DOCX file.
+        resource_dir: Base directory for image resources.
+        reference_doc: Path to the Pandoc reference DOCX template.
+        lua_filters: List of Lua filter paths to apply during conversion.
+        extra_resource_paths: Additional directories for Pandoc --resource-path.
+    """
     with open(input_path, 'r', encoding='utf-8') as file:
         content = file.read()
 
@@ -202,10 +225,22 @@ def process_file(input_path, output_path, resource_dir, reference_doc, lua_filte
     try:
         command = [
             'pandoc', temp_path, '-o', output_path,
-            '--lua-filter=' + lua_filter,
             '--reference-doc', reference_doc,
-            '--resource-path', resource_dir
         ]
+
+        # Add all Lua filters
+        for lua_filter in lua_filters:
+            if os.path.exists(lua_filter):
+                command.append(f'--lua-filter={lua_filter}')
+
+        # Build resource path: include resource_dir, image subdirectory, and extras
+        resource_paths = [resource_dir]
+        image_subdir = os.path.join(resource_dir, f"{filename}-web-resources", 'image')
+        if os.path.isdir(image_subdir):
+            resource_paths.append(image_subdir)
+        if extra_resource_paths:
+            resource_paths.extend(extra_resource_paths)
+        command.extend(['--resource-path', os.pathsep.join(resource_paths)])
 
         result = subprocess.run(command, capture_output=True, text=True)
         if result.returncode != 0:
@@ -231,7 +266,13 @@ def main():
     output_dir = config['paths']['docx_dir']
     resource_dir = config['paths']['xhtml_dir']
     reference_doc = config['reference_doc']
-    lua_filter = config['lua_filter']
+
+    # Collect all configured Lua filters
+    lua_filters = []
+    for key in ('lua_filter', 'lua_filter_endnotes', 'lua_filter_links'):
+        path = config.get(key, '')
+        if path:
+            lua_filters.append(path)
 
     if not os.path.exists(input_dir):
         print(f'Error: input directory not found: {input_dir}')
@@ -254,7 +295,7 @@ def main():
         output_filename = os.path.splitext(filename)[0] + '.docx'
         output_path = os.path.join(output_dir, output_filename)
 
-        if process_file(input_path, output_path, resource_dir, reference_doc, lua_filter):
+        if process_file(input_path, output_path, resource_dir, reference_doc, lua_filters):
             success += 1
         else:
             errors += 1

@@ -43,6 +43,14 @@ def shorten_annotation(annotation):
     return shortened
 
 
+def _normalize_isbn(value):
+    """Normalize ISBN value: strip trailing .0 from Excel float representation."""
+    s = str(value).strip()
+    if s.endswith('.0'):
+        s = s[:-2]
+    return s
+
+
 def convert_with_calibre(input_path, output_path, metadata, cover_image_path,
                          css_path, language, publisher, epub_version):
     """Convert a single DOCX file to EPUB using Calibre with metadata applied.
@@ -152,7 +160,7 @@ sup {
         output_path = os.path.join(output_dir, book_name + '.epub')
 
         # Match metadata by ISBN (filename = ISBN)
-        matching_metadata = metadata_df[metadata_df['ISBN'].astype(str) == book_name]
+        matching_metadata = metadata_df[metadata_df['ISBN'].apply(_normalize_isbn) == book_name]
 
         if matching_metadata.empty:
             print(f'  Warning: no metadata found for {book_name}, skipping')
@@ -160,7 +168,7 @@ sup {
             continue
 
         metadata = matching_metadata.iloc[0]
-        cover_image_path = os.path.join(cover_dir, str(metadata['ISBN']) + '.jpg')
+        cover_image_path = os.path.join(cover_dir, _normalize_isbn(metadata['ISBN']) + '.jpg')
 
         if convert_with_calibre(
             input_path, output_path, metadata, cover_image_path,
