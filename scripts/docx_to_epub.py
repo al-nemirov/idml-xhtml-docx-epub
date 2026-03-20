@@ -55,18 +55,16 @@ def convert_with_calibre(input_path, output_path, metadata, cover_image_path,
                          css_path, language, publisher, epub_version):
     """Convert a single DOCX file to EPUB using Calibre with metadata applied.
 
-    Note: Excel column names below are in Russian to match the source spreadsheet.
-    Column mapping: Аннотация=Annotation, Переводчики=Translators,
-    Произведение=Title, Авторы=Authors, ISBN=ISBN.
+    Excel column names: Title, Authors, Annotation, Translators, ISBN.
     """
-    comments = shorten_annotation(str(metadata['Аннотация']))  # Annotation
+    comments = shorten_annotation(str(metadata['Annotation']))
     comments = comments.replace('<p>', '').replace('</p>', '\n').replace('<br>', '\n')
-    translators = metadata['Переводчики'] if not pd.isna(metadata['Переводчики']) else ''  # Translators
+    translators = metadata['Translators'] if not pd.isna(metadata['Translators']) else ''
 
     command = [
         'ebook-convert', input_path, output_path,
-        '--title', str(metadata['Произведение']),   # Title
-        '--authors', str(metadata['Авторы']),        # Authors
+        '--title', str(metadata['Title']),
+        '--authors', str(metadata['Authors']),
         '--language', language,
         '--publisher', publisher,
         '--comments', comments,

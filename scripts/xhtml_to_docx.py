@@ -48,26 +48,23 @@ def clean_tags(content):
 def replace_tags(content):
     """Map InDesign CSS paragraph style classes to semantic HTML heading elements.
 
-    Note: The Russian keys below are InDesign paragraph style names from the
-    source documents. They must match the actual style names used in InDesign.
-    Mapping: Part, Chapter, Heading 2-6, Subheading, Subtitle, Blockquote,
-    Footnote, Footnote-ref, Footnote-back.
+    The keys must match the actual InDesign paragraph style names.
+    Rename your InDesign styles to these English names before export.
     """
-    # Russian style names — these match InDesign paragraph styles and MUST stay as-is
     replacements = {
-        "Часть": "h2",            # Part
-        "Глава": "h3",            # Chapter
-        "Заголовок 2": "h2",      # Heading 2
-        "Подглавка": "h2",        # Subheading
-        "Подзаголовок": "h2",     # Subtitle
-        "Заголовок 3": "h3",      # Heading 3
-        "Заголовок 4": "h4",      # Heading 4
-        "Заголовок 5": "h5",      # Heading 5
-        "Заголовок 6": "h6",      # Heading 6
-        "Цитата": "blockquote",   # Blockquote
+        "Part": "h2",
+        "Chapter": "h3",
+        "Heading 2": "h2",
+        "Subheading": "h2",
+        "Subtitle": "h2",
+        "Heading 3": "h3",
+        "Heading 4": "h4",
+        "Heading 5": "h5",
+        "Heading 6": "h6",
+        "Blockquote": "blockquote",
         "footnote-text": "footnote",
-        "Сноска": "footnote-ref",  # Footnote reference
-        "АСноска": "footnote-back" # Footnote back-link
+        "Footnote-ref": "footnote-ref",
+        "Footnote-back": "footnote-back",
     }
 
     for style, tag in replacements.items():

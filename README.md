@@ -174,15 +174,15 @@ The pipeline maps InDesign paragraph style names to HTML headings. For best resu
 
 | InDesign Style | HTML Output | Notes |
 |---|---|---|
-| `Heading 1` | `<h1>` | Used by JSX scripts for heading detection |
-| `Heading 2` | `<h2>` | |
-| `Heading 3` &ndash; `Heading 6` | `<h3>` &ndash; `<h6>` | |
-| `Часть` (Part) | `<h2>` | Russian style names in XHTML stage |
-| `Глава` (Chapter) | `<h3>` | Russian style names in XHTML stage |
-| `Заголовок 2`&ndash;`6` | `<h2>`&ndash;`<h6>` | Russian style names in XHTML stage |
-| `Цитата` (Quote) | `<blockquote>` | |
+| `Heading 1` | `<h1>` | Book title |
+| `Heading 2` | `<h2>` | Part / section |
+| `Heading 3` | `<h3>` | Chapter |
+| `Heading 4` &ndash; `Heading 6` | `<h4>` &ndash; `<h6>` | Sub-headings |
+| `Part` | `<h2>` | Alternative name for parts |
+| `Chapter` | `<h3>` | Alternative name for chapters |
+| `Blockquote` | `<blockquote>` | Block quotations |
 
-> **Tip**: Renaming InDesign styles to `Heading 1`, `Heading 2`, etc. before export ensures the JSX scripts correctly identify heading levels. The Python XHTML stage also supports Russian-named styles for localized InDesign templates.
+> **Important**: Rename your InDesign paragraph styles to these English names before export. The pipeline expects English style names.
 
 ### Images (Important)
 
@@ -219,13 +219,13 @@ The `scripts/indesign/` folder contains ExtendScript (JSX) files that run inside
 
 ### Stage 3: XHTML to DOCX
 
-**`xhtml_to_docx.py`** cleans InDesign-specific tags, maps CSS classes to semantic HTML headings (Russian style names match InDesign source), merges consecutive headings, fixes image paths, and converts to DOCX via Pandoc with custom Lua filters.
+**`xhtml_to_docx.py`** cleans InDesign-specific tags, maps CSS classes to semantic HTML headings, merges consecutive headings, fixes image paths, and converts to DOCX via Pandoc with custom Lua filters.
 
 Image paths are automatically resolved to the `*-web-resources/image/` directories created during InDesign export. Spaces in filenames are replaced with underscores for compatibility.
 
 ### Stage 4: DOCX to EPUB
 
-**`docx_to_epub.py`** reads book metadata (title, author, ISBN, annotation, translators) from an Excel spreadsheet, applies cover images, and converts to EPUB 3 using Calibre.
+**`docx_to_epub.py`** reads book metadata from an Excel spreadsheet (`books.xlsx`), applies cover images, and converts to EPUB 3 using Calibre. Expected Excel columns: `ISBN`, `Title`, `Authors`, `Annotation`, `Translators`.
 
 ### Stage 5: EPUB Enrichment
 
@@ -272,7 +272,7 @@ idml-xhtml-docx-epub/
 │   ├── fix_endnotes.lua        # Pandoc endnote fixer
 │   └── fix_links_epub.lua      # Pandoc link extension fixer
 ├── templates/
-│   ├── custom-reference.docx   # Pandoc reference document (Russian)
+│   ├── custom-reference.docx   # Pandoc reference document
 │   ├── styles.css              # Footnote styles
 │   └── template.opf            # OPF package template
 └── data/                        # Working directories (gitignored)
@@ -288,6 +288,11 @@ idml-xhtml-docx-epub/
         ├── image_map.json      # Extracted images (editable)
         └── backups/            # Auto-backups of modified files
 ```
+
+## Contributors
+
+* **al-nemirov** — Alexander Nemirov
+* **claude** — Claude
 
 ## License
 
