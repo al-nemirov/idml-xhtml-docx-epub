@@ -1,0 +1,64 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+*.whl
+venv/
+.venv/
+env/
+.env
+
+# Data files
+*.xlsx
+*.csv
+*.docx
+*.epub
+*.xhtml
+*.html
+*.indd
+*.idml
+*.fb2
+data/
+
+# Keep template files that are tracked
+!templates/custom-reference.docx
+
+# Images (in working directories)
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.bmp
+*.svg
+*.tiff
+*.tif
+
+# Configuration (contains local paths)
+config.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.log
+temp_file.html

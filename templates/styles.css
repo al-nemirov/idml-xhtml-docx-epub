@@ -1,0 +1,12 @@
+/* Styles for footnote reference numbers */
+sup, .footnote-ref {
+    font-size: smaller;
+    font-weight: bold;
+    color: red; /* Adjust color as needed */
+}
+
+/* Styles for footnote body text */
+.footnote, .footnote-text {
+    font-size: smaller;
+    color: gray; /* Adjust color as needed */
+}
