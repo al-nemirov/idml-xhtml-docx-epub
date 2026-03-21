@@ -11,11 +11,14 @@ Part of the book conversion pipeline: InDesign -> XHTML -> DOCX -> EPUB
 
 import os
 import json
+import logging
 import sys
 import zipfile
 import tempfile
 import lxml.etree as ET
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 NS_XHTML = 'http://www.w3.org/1999/xhtml'
 NS_OPF = 'http://www.idpf.org/2007/opf'
@@ -24,17 +27,24 @@ NS_OPS = 'http://www.idpf.org/2007/ops'
 
 
 def load_config():
-    """Load configuration from config.json in the project root."""
-    config_path = os.path.join(os.path.dirname(__file__), '..', 'config.json')
+    """Load configuration from config.json in the project root.
+
+    Honors the PIPELINE_CONFIG environment variable to override the default
+    config path (useful for testing without touching the root config.json).
+    """
+    config_path = os.environ.get(
+        'PIPELINE_CONFIG',
+        os.path.join(os.path.dirname(__file__), '..', 'config.json'),
+    )
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except FileNotFoundError:
-        print(f'Error: config.json not found at {os.path.abspath(config_path)}')
-        print('Copy config.example.json to config.json and edit it.')
+        logger.error('config.json not found at %s', os.path.abspath(config_path))
+        logger.error('Copy config.example.json to config.json and edit it.')
         sys.exit(1)
     except json.JSONDecodeError as e:
-        print(f'Error: invalid JSON in config.json: {e}')
+        logger.error('invalid JSON in config.json: %s', e)
         sys.exit(1)
 
 
@@ -285,7 +295,7 @@ def process_epub(epub_path, output_path, metadata_df, config):
     language = config.get('language', 'en')
 
     book_isbn = os.path.splitext(os.path.basename(epub_path))[0]
-    print(f'Processing: {os.path.basename(epub_path)}')
+    logger.info('Processing: %s', os.path.basename(epub_path))
 
     # Use a temporary directory for EPUB extraction (auto-cleaned)
     with tempfile.TemporaryDirectory(prefix='epub_enrich_') as temp_dir:
@@ -316,7 +326,7 @@ def process_epub(epub_path, output_path, metadata_df, config):
                 'publisher_notice': publisher_notice,
             }
         else:
-            print(f'  Warning: no metadata found for ISBN {book_isbn}')
+            logger.warning('no metadata found for ISBN %s', book_isbn)
             custom_metadata = {
                 'schema:accessibilityHazard': 'none',
                 'schema:accessibilityFeature': 'alternativeText',
@@ -383,7 +393,7 @@ def process_epub(epub_path, output_path, metadata_df, config):
                     arcname = os.path.relpath(file_path, temp_dir)
                     epub_zip.write(file_path, arcname)
 
-    print(f'  Enriched: {os.path.basename(output_path)}')
+    logger.info('  Enriched: %s', os.path.basename(output_path))
 
 
 def main():
@@ -395,7 +405,7 @@ def main():
     output_dir = config['paths']['output_dir']
 
     if not os.path.exists(epub_dir):
-        print(f'Error: EPUB directory not found: {epub_dir}')
+        logger.error('EPUB directory not found: %s', epub_dir)
         sys.exit(1)
 
     os.makedirs(output_dir, exist_ok=True)
@@ -403,25 +413,25 @@ def main():
     # Load metadata
     try:
         metadata_df = pd.read_excel(metadata_xlsx)
-        print(f'Loaded metadata: {len(metadata_df)} entries')
+        logger.info('Loaded metadata: %d entries', len(metadata_df))
     except FileNotFoundError:
-        print(f'Error: metadata file not found: {metadata_xlsx}')
+        logger.error('metadata file not found: %s', metadata_xlsx)
         sys.exit(1)
 
     # Validate required columns
     required_columns = ['ISBN', 'Title', 'Authors', 'Annotation', 'Translators']
     missing_cols = [c for c in required_columns if c not in metadata_df.columns]
     if missing_cols:
-        print(f'Error: missing required columns in {metadata_xlsx}: {", ".join(missing_cols)}')
-        print(f'Expected columns: {", ".join(required_columns)}')
+        logger.error('missing required columns in %s: %s', metadata_xlsx, ', '.join(missing_cols))
+        logger.error('Expected columns: %s', ', '.join(required_columns))
         sys.exit(1)
 
     epub_files = [f for f in os.listdir(epub_dir) if f.endswith('.epub')]
     if not epub_files:
-        print(f'No .epub files found in {epub_dir}')
+        logger.warning('No .epub files found in %s', epub_dir)
         return
 
-    print(f'Processing {len(epub_files)} EPUB file(s)...\n')
+    logger.info('Processing %d EPUB file(s)...', len(epub_files))
 
     errors = 0
     for filename in epub_files:
@@ -430,10 +440,10 @@ def main():
         try:
             process_epub(epub_path, output_path, metadata_df, config)
         except Exception as e:
-            print(f'  Error processing {filename}: {e}')
+            logger.error('Error processing %s: %s', filename, e)
             errors += 1
 
-    print('\nMetadata enrichment completed!')
+    logger.info('Metadata enrichment completed!')
 
     if errors > 0:
         sys.exit(1)

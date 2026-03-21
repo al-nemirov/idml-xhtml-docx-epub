@@ -18,26 +18,36 @@ import os
 import re
 import sys
 import time
+import logging
 from datetime import datetime
 
 # Add parent to path for utils import
 sys.path.insert(0, os.path.dirname(__file__))
 from utils.file_utils import save_json, load_json, backup_file
 
+logger = logging.getLogger(__name__)
+
 
 def load_config():
-    """Load configuration from config.json in the project root."""
+    """Load configuration from config.json in the project root.
+
+    Honors the PIPELINE_CONFIG environment variable to override the default
+    config path (useful for testing without touching the root config.json).
+    """
     import json
-    config_path = os.path.join(os.path.dirname(__file__), '..', 'config.json')
+    config_path = os.environ.get(
+        'PIPELINE_CONFIG',
+        os.path.join(os.path.dirname(__file__), '..', 'config.json'),
+    )
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except FileNotFoundError:
-        print(f'Error: config.json not found at {os.path.abspath(config_path)}')
-        print('Copy config.example.json to config.json and edit it.')
+        logger.error('config.json not found at %s', os.path.abspath(config_path))
+        logger.error('Copy config.example.json to config.json and edit it.')
         sys.exit(1)
     except json.JSONDecodeError as e:
-        print(f'Error: invalid JSON in config.json: {e}')
+        logger.error('invalid JSON in config.json: %s', e)
         sys.exit(1)
 
 
@@ -186,18 +196,18 @@ def build_structure(config):
         backup_file(structured_path, backup_dir=os.path.join(temp_dir, 'backups'))
 
     if not os.path.exists(input_dir):
-        print(f'Error: input directory not found: {input_dir}')
+        logger.error('input directory not found: %s', input_dir)
         return False
 
     xhtml_files = sorted([f for f in os.listdir(input_dir) if f.endswith('.xhtml')])
     if not xhtml_files:
-        print(f'No .xhtml files found in {input_dir}')
+        logger.warning('No .xhtml files found in %s', input_dir)
         return False
 
-    print(f'{"=" * 60}')
-    print(f'  BUILDING STRUCTURED JSON')
-    print(f'  Files: {len(xhtml_files)} | Source: {input_dir}')
-    print(f'{"=" * 60}\n')
+    logger.info('%s', '=' * 60)
+    logger.info('  BUILDING STRUCTURED JSON')
+    logger.info('  Files: %d | Source: %s', len(xhtml_files), input_dir)
+    logger.info('%s\n', '=' * 60)
 
     all_elements = []
     file_stats = {}
@@ -219,7 +229,7 @@ def build_structure(config):
 
         file_stats[filename] = type_counts
         parts = ', '.join(f'{v} {k}' for k, v in sorted(type_counts.items()))
-        print(f'  {filename}: {parts}')
+        logger.info('  %s: %s', filename, parts)
 
     # Re-number all elements globally
     for idx, elem in enumerate(all_elements, 1):
@@ -250,14 +260,15 @@ def build_structure(config):
 
     duration = time.time() - start_time
 
-    print(f'\n{"=" * 60}')
-    print(f'  STRUCTURE BUILT')
-    print(f'{"=" * 60}')
-    print(f'  Total elements: {len(all_elements)}')
+    logger.info('')
+    logger.info('%s', '=' * 60)
+    logger.info('  STRUCTURE BUILT')
+    logger.info('%s', '=' * 60)
+    logger.info('  Total elements: %d', len(all_elements))
     for t, c in sorted(total_by_type.items()):
-        print(f'    {t}: {c}')
-    print(f'  Output: {structured_path}')
-    print(f'  Duration: {duration:.1f}s')
+        logger.info('    %s: %d', t, c)
+    logger.info('  Output: %s', structured_path)
+    logger.info('  Duration: %.1fs', duration)
 
     return True
 

@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "idml-xhtml-docx-epub"
+version = "1.0.0"
+description = "Book conversion pipeline: InDesign XHTML to DOCX to EPUB"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [
+    {name = "Alexander Nemirov"},
+]
+
+dependencies = [
+    "lxml>=4.9,<6",
+    "pandas>=1.5,<3",
+    "openpyxl>=3.0,<4",
+    "beautifulsoup4>=4.12,<5",
+    "pypandoc>=1.11,<2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+]
+
+[project.scripts]
+book-pipeline = "run:main"
+
+[project.urls]
+Repository = "https://github.com/al-nemirov/idml-xhtml-docx-epub"
+
+[tool.setuptools]
+py-modules = ["run"]
+
+[tool.setuptools.packages.find]
+include = ["scripts*"]

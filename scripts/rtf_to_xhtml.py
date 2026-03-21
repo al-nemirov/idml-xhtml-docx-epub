@@ -13,24 +13,34 @@ Part of the book conversion pipeline: InDesign -> XHTML -> DOCX -> EPUB
 
 import os
 import json
+import logging
 import sys
 import base64
 import pypandoc
 from bs4 import BeautifulSoup, Comment
 
+logger = logging.getLogger(__name__)
+
 
 def load_config():
-    """Load configuration from config.json in the project root."""
-    config_path = os.path.join(os.path.dirname(__file__), '..', 'config.json')
+    """Load configuration from config.json in the project root.
+
+    Honors the PIPELINE_CONFIG environment variable to override the default
+    config path (useful for testing without touching the root config.json).
+    """
+    config_path = os.environ.get(
+        'PIPELINE_CONFIG',
+        os.path.join(os.path.dirname(__file__), '..', 'config.json'),
+    )
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except FileNotFoundError:
-        print(f'Error: config.json not found at {os.path.abspath(config_path)}')
-        print('Copy config.example.json to config.json and edit it.')
+        logger.error('config.json not found at %s', os.path.abspath(config_path))
+        logger.error('Copy config.example.json to config.json and edit it.')
         sys.exit(1)
     except json.JSONDecodeError as e:
-        print(f'Error: invalid JSON in config.json: {e}')
+        logger.error('invalid JSON in config.json: %s', e)
         sys.exit(1)
 
 
@@ -63,7 +73,7 @@ def convert_rtf_to_xhtml(rtf_path, output_folder):
     try:
         html_content = pypandoc.convert_file(rtf_path, 'html')
     except Exception as e:
-        print(f'  Error converting {rtf_path}: {e}')
+        logger.error('Error converting %s: %s', rtf_path, e)
         return False
 
     # Parse HTML with BeautifulSoup
@@ -85,7 +95,7 @@ def convert_rtf_to_xhtml(rtf_path, output_folder):
                     img_file.write(base64.b64decode(img_data))
                 img['src'] = os.path.join(f"{file_name}-web-resources/image", img_name)
             except Exception as e:
-                print(f'  Warning: could not extract embedded image: {e}')
+                logger.warning('could not extract embedded image: %s', e)
 
     # Extract and save inline styles to external CSS files
     for style in soup.find_all('style'):
@@ -118,17 +128,17 @@ def main():
     output_folder = config['paths']['xhtml_dir']
 
     if not os.path.exists(input_folder):
-        print(f'Error: input directory not found: {input_folder}')
+        logger.error('input directory not found: %s', input_folder)
         sys.exit(1)
 
     os.makedirs(output_folder, exist_ok=True)
 
     rtf_files = [f for f in os.listdir(input_folder) if f.endswith('.rtf')]
     if not rtf_files:
-        print(f'No .rtf files found in {input_folder}')
+        logger.warning('No .rtf files found in %s', input_folder)
         return
 
-    print(f'Processing {len(rtf_files)} RTF file(s)...')
+    logger.info('Processing %d RTF file(s)...', len(rtf_files))
 
     success = 0
     errors = 0
@@ -136,12 +146,12 @@ def main():
     for file_name in rtf_files:
         rtf_path = os.path.join(input_folder, file_name)
         if convert_rtf_to_xhtml(rtf_path, output_folder):
-            print(f'  Converted: {file_name}')
+            logger.info('  Converted: %s', file_name)
             success += 1
         else:
             errors += 1
 
-    print(f'\nConversion completed: {success} successful, {errors} errors')
+    logger.info('Conversion completed: %d successful, %d errors', success, errors)
 
     if errors > 0:
         sys.exit(1)

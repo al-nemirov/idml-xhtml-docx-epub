@@ -102,18 +102,26 @@ def create_test_config(temp_dir, metadata_path):
     for key, path in config['paths'].items():
         os.makedirs(path, exist_ok=True)
 
-    config_path = os.path.join(PROJECT_ROOT, 'config.json')
+    config_path = os.path.join(temp_dir, 'config.json')
     with open(config_path, 'w', encoding='utf-8') as f:
         json.dump(config, f, indent=2)
+    # Set env var so all scripts find this config instead of the project root one
+    os.environ['PIPELINE_CONFIG'] = config_path
     return config_path, config
 
 
 def run_script(script_name, args=None, cwd=None):
-    """Run a Python script and return (success, stdout, stderr)."""
+    """Run a Python script and return (success, stdout, stderr).
+
+    Passes the current environment (including PIPELINE_CONFIG) so that
+    child scripts use the test config instead of the root config.json.
+    """
     cmd = [sys.executable, os.path.join(PROJECT_ROOT, script_name)]
     if args:
         cmd.extend(args)
-    result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd or PROJECT_ROOT)
+    result = subprocess.run(
+        cmd, capture_output=True, text=True, cwd=cwd or PROJECT_ROOT, env=os.environ.copy(),
+    )
     return result.returncode == 0, result.stdout, result.stderr
 
 
@@ -286,9 +294,8 @@ def main():
                 print(f'  ERROR: {e}')
                 failed += 1
 
-        # Cleanup config.json
-        if os.path.exists(config_path):
-            os.remove(config_path)
+        # Cleanup: remove env var (temp dir auto-cleans the file)
+        os.environ.pop('PIPELINE_CONFIG', None)
 
     print(f'\n{"=" * 60}')
     print(f'  RESULTS: {passed} passed, {failed} failed')

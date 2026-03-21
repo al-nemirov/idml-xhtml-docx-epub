@@ -10,23 +10,34 @@ Part of the book conversion pipeline: InDesign -> XHTML -> DOCX -> EPUB
 
 import os
 import json
+import logging
 import sys
 import subprocess
+import time
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 def load_config():
-    """Load configuration from config.json in the project root."""
-    config_path = os.path.join(os.path.dirname(__file__), '..', 'config.json')
+    """Load configuration from config.json in the project root.
+
+    Honors the PIPELINE_CONFIG environment variable to override the default
+    config path (useful for testing without touching the root config.json).
+    """
+    config_path = os.environ.get(
+        'PIPELINE_CONFIG',
+        os.path.join(os.path.dirname(__file__), '..', 'config.json'),
+    )
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except FileNotFoundError:
-        print(f'Error: config.json not found at {os.path.abspath(config_path)}')
-        print('Copy config.example.json to config.json and edit it.')
+        logger.error('config.json not found at %s', os.path.abspath(config_path))
+        logger.error('Copy config.example.json to config.json and edit it.')
         sys.exit(1)
     except json.JSONDecodeError as e:
-        print(f'Error: invalid JSON in config.json: {e}')
+        logger.error('invalid JSON in config.json: %s', e)
         sys.exit(1)
 
 
@@ -81,25 +92,56 @@ def convert_with_calibre(input_path, output_path, metadata, cover_image_path,
     if os.path.exists(cover_image_path):
         command.extend(['--cover', cover_image_path])
     else:
-        print(f'  Warning: cover image not found: {cover_image_path}')
+        logger.warning('cover image not found: %s', cover_image_path)
 
     if translators:
         command.extend(['--translator', str(translators)])
 
-    try:
-        result = subprocess.run(command, capture_output=True, text=True, check=True)
-        print(f'  Converted: {os.path.basename(input_path)} -> {os.path.basename(output_path)}')
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f'  Error converting {os.path.basename(input_path)}:')
-        if e.stderr:
-            # Show last 5 lines of error output
-            for line in e.stderr.strip().split('\n')[-5:]:
-                print(f'    {line}')
-        return False
-    except FileNotFoundError:
-        print('  Error: ebook-convert not found. Is Calibre installed and in PATH?')
-        return False
+    max_retries = 2
+    timeout_seconds = 300
+    for attempt in range(1, max_retries + 1):
+        try:
+            start_t = time.time()
+            result = subprocess.run(
+                command, capture_output=True, text=True, timeout=timeout_seconds,
+            )
+            elapsed = time.time() - start_t
+            if result.returncode != 0:
+                logger.error(
+                    'ebook-convert error for %s (exit code %d, %.1fs):',
+                    os.path.basename(input_path), result.returncode, elapsed,
+                )
+                if result.stderr:
+                    for line in result.stderr.strip().split('\n')[-5:]:
+                        logger.error('    %s', line)
+                if attempt < max_retries:
+                    logger.warning('  Retrying (%d/%d)...', attempt, max_retries)
+                    time.sleep(1)
+                    continue
+                return False
+
+            logger.info(
+                '  Converted: %s -> %s (exit code 0, %.1fs)',
+                os.path.basename(input_path), os.path.basename(output_path), elapsed,
+            )
+            return True
+
+        except subprocess.TimeoutExpired:
+            logger.error(
+                'ebook-convert timed out after %ds for %s',
+                timeout_seconds, os.path.basename(input_path),
+            )
+            if attempt < max_retries:
+                logger.warning('  Retrying (%d/%d)...', attempt, max_retries)
+                time.sleep(1)
+                continue
+            return False
+
+        except FileNotFoundError:
+            logger.error('ebook-convert not found. Is Calibre installed and in PATH?')
+            return False
+
+    return False
 
 
 def main():
@@ -116,7 +158,7 @@ def main():
     epub_version = config.get('epub_version', '3')
 
     if not os.path.exists(input_dir):
-        print(f'Error: input directory not found: {input_dir}')
+        logger.error('input directory not found: %s', input_dir)
         sys.exit(1)
 
     os.makedirs(output_dir, exist_ok=True)
@@ -125,18 +167,18 @@ def main():
     # Load metadata
     try:
         metadata_df = pd.read_excel(metadata_xlsx)
-        print(f'Loaded metadata: {len(metadata_df)} entries')
-        print(f'Columns: {list(metadata_df.columns)}')
+        logger.info('Loaded metadata: %d entries', len(metadata_df))
+        logger.info('Columns: %s', list(metadata_df.columns))
     except FileNotFoundError:
-        print(f'Error: metadata file not found: {metadata_xlsx}')
+        logger.error('metadata file not found: %s', metadata_xlsx)
         sys.exit(1)
 
     # Validate required columns
     required_columns = ['ISBN', 'Title', 'Authors', 'Annotation', 'Translators']
     missing_cols = [c for c in required_columns if c not in metadata_df.columns]
     if missing_cols:
-        print(f'Error: missing required columns in {metadata_xlsx}: {", ".join(missing_cols)}')
-        print(f'Expected columns: {", ".join(required_columns)}')
+        logger.error('missing required columns in %s: %s', metadata_xlsx, ', '.join(missing_cols))
+        logger.error('Expected columns: %s', ', '.join(required_columns))
         sys.exit(1)
 
     # Create CSS file for footnote styles
@@ -152,10 +194,10 @@ sup {
 
     docx_files = [f for f in os.listdir(input_dir) if f.endswith('.docx')]
     if not docx_files:
-        print(f'No .docx files found in {input_dir}')
+        logger.warning('No .docx files found in %s', input_dir)
         return
 
-    print(f'Processing {len(docx_files)} DOCX file(s)...\n')
+    logger.info('Processing %d DOCX file(s)...', len(docx_files))
 
     success = 0
     errors = 0
@@ -169,7 +211,7 @@ sup {
         matching_metadata = metadata_df[metadata_df['ISBN'].apply(_normalize_isbn) == book_name]
 
         if matching_metadata.empty:
-            print(f'  Warning: no metadata found for {book_name}, skipping')
+            logger.warning('no metadata found for %s, skipping', book_name)
             errors += 1
             continue
 
@@ -184,7 +226,7 @@ sup {
         else:
             errors += 1
 
-    print(f'\nConversion completed: {success} successful, {errors} errors')
+    logger.info('Conversion completed: %d successful, %d errors', success, errors)
 
     if errors > 0:
         sys.exit(1)

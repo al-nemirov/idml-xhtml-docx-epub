@@ -29,6 +29,7 @@ Part of the book conversion pipeline: InDesign -> XHTML -> DOCX -> EPUB
 import os
 import re
 import json
+import logging
 import sys
 import shutil
 import time
@@ -37,19 +38,28 @@ import time
 sys.path.insert(0, os.path.dirname(__file__))
 from utils.file_utils import save_json, load_json, backup_file
 
+logger = logging.getLogger(__name__)
+
 
 def load_config():
-    """Load configuration from config.json in the project root."""
-    config_path = os.path.join(os.path.dirname(__file__), '..', 'config.json')
+    """Load configuration from config.json in the project root.
+
+    Honors the PIPELINE_CONFIG environment variable to override the default
+    config path (useful for testing without touching the root config.json).
+    """
+    config_path = os.environ.get(
+        'PIPELINE_CONFIG',
+        os.path.join(os.path.dirname(__file__), '..', 'config.json'),
+    )
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except FileNotFoundError:
-        print(f'Error: config.json not found at {os.path.abspath(config_path)}')
-        print('Copy config.example.json to config.json and edit it.')
+        logger.error('config.json not found at %s', os.path.abspath(config_path))
+        logger.error('Copy config.example.json to config.json and edit it.')
         sys.exit(1)
     except json.JSONDecodeError as e:
-        print(f'Error: invalid JSON in config.json: {e}')
+        logger.error('invalid JSON in config.json: %s', e)
         sys.exit(1)
 
 
@@ -176,7 +186,7 @@ def extract_phase(config):
     os.makedirs(temp_dir, exist_ok=True)
 
     if not os.path.exists(input_dir):
-        print(f'Error: input directory not found: {input_dir}')
+        logger.error('input directory not found: %s', input_dir)
         return False
 
     all_footnotes = []
@@ -185,13 +195,13 @@ def extract_phase(config):
 
     xhtml_files = sorted([f for f in os.listdir(input_dir) if f.endswith('.xhtml')])
     if not xhtml_files:
-        print(f'No .xhtml files found in {input_dir}')
+        logger.warning('No .xhtml files found in %s', input_dir)
         return False
 
-    print(f'{"=" * 60}')
-    print(f'  FOOTNOTE EXTRACTION')
-    print(f'  Files: {len(xhtml_files)} | Source: {input_dir}')
-    print(f'{"=" * 60}\n')
+    logger.info('%s', '=' * 60)
+    logger.info('  FOOTNOTE EXTRACTION')
+    logger.info('  Files: %d | Source: %s', len(xhtml_files), input_dir)
+    logger.info('%s\n', '=' * 60)
 
     for filename in xhtml_files:
         input_path = os.path.join(input_dir, filename)
@@ -211,7 +221,7 @@ def extract_phase(config):
             stats['bodies'] += body_count
             stats['references'] += ref_count
             stats['files'] += 1
-            print(f'  {filename}: {body_count} footnotes, {ref_count} references')
+            logger.info('  %s: %d footnotes, %d references', filename, body_count, ref_count)
 
             # Save modified XHTML with anchors
             with open(input_path, 'w', encoding='utf-8') as f:
@@ -219,7 +229,7 @@ def extract_phase(config):
 
             processed_files.append(filename)
         else:
-            print(f'  {filename}: no footnotes')
+            logger.info('  %s: no footnotes', filename)
 
     # Build the footnote map with metadata
     map_data = {
@@ -240,17 +250,19 @@ def extract_phase(config):
 
     duration = time.time() - start_time
 
-    print(f'\n{"=" * 60}')
-    print(f'  EXTRACTION RESULTS')
-    print(f'{"=" * 60}')
-    print(f'  Footnote bodies: {stats["bodies"]}')
-    print(f'  Footnote references: {stats["references"]}')
-    print(f'  Files processed: {stats["files"]}')
-    print(f'  Map saved: {map_path}')
-    print(f'  Duration: {duration:.1f}s')
-    print(f'\n  You can now review/edit {map_path}')
-    print(f'  Set "approved": false to skip specific footnotes.')
-    print(f'  Then run: python process_footnotes.py insert')
+    logger.info('')
+    logger.info('%s', '=' * 60)
+    logger.info('  EXTRACTION RESULTS')
+    logger.info('%s', '=' * 60)
+    logger.info('  Footnote bodies: %d', stats['bodies'])
+    logger.info('  Footnote references: %d', stats['references'])
+    logger.info('  Files processed: %d', stats['files'])
+    logger.info('  Map saved: %s', map_path)
+    logger.info('  Duration: %.1fs', duration)
+    logger.info('')
+    logger.info('  You can now review/edit %s', map_path)
+    logger.info('  Set "approved": false to skip specific footnotes.')
+    logger.info('  Then run: python process_footnotes.py insert')
 
     return True
 
@@ -370,8 +382,8 @@ def insert_phase(config):
     map_path = os.path.join(temp_dir, 'footnote_map.json')
     map_data = load_json(map_path)
     if map_data is None:
-        print(f'Error: footnote_map.json not found at {map_path}')
-        print('Run the extract phase first: python process_footnotes.py extract')
+        logger.error('footnote_map.json not found at %s', map_path)
+        logger.error('Run the extract phase first: python process_footnotes.py extract')
         return False
 
     all_footnotes = map_data.get('footnotes', [])
@@ -384,16 +396,16 @@ def insert_phase(config):
     rejected = len(footnote_bodies) - len(approved)
 
     if not approved:
-        print('No approved footnotes to insert.')
+        logger.info('No approved footnotes to insert.')
         return True
 
     os.makedirs(output_dir, exist_ok=True)
 
-    print(f'{"=" * 60}')
-    print(f'  FOOTNOTE INSERTION')
-    print(f'  Footnotes: {len(approved)} approved'
-          + (f', {rejected} rejected' if rejected else ''))
-    print(f'{"=" * 60}\n')
+    logger.info('%s', '=' * 60)
+    logger.info('  FOOTNOTE INSERTION')
+    logger.info('  Footnotes: %d approved%s', len(approved),
+                (', %d rejected' % rejected) if rejected else '')
+    logger.info('%s\n', '=' * 60)
 
     total_stats = {'replaced': 0, 'skipped': 0, 'fuzzy_matched': 0, 'not_found': 0}
 
@@ -419,8 +431,8 @@ def insert_phase(config):
             total_stats[key] += file_stats[key]
 
         if file_stats['replaced'] or file_stats['fuzzy_matched']:
-            print(f'  {filename}: {file_stats["replaced"]} inserted'
-                  + (f', {file_stats["fuzzy_matched"]} fuzzy' if file_stats['fuzzy_matched'] else ''))
+            logger.info('  %s: %d inserted%s', filename, file_stats['replaced'],
+                        (', %d fuzzy' % file_stats['fuzzy_matched']) if file_stats['fuzzy_matched'] else '')
 
         # Write the processed file
         with open(output_path, 'w', encoding='utf-8') as f:
@@ -438,17 +450,18 @@ def insert_phase(config):
 
     duration = time.time() - start_time
 
-    print(f'\n{"=" * 60}')
-    print(f'  INSERTION RESULTS')
-    print(f'{"=" * 60}')
-    print(f'  Inserted (exact): {total_stats["replaced"]}')
+    logger.info('')
+    logger.info('%s', '=' * 60)
+    logger.info('  INSERTION RESULTS')
+    logger.info('%s', '=' * 60)
+    logger.info('  Inserted (exact): %d', total_stats['replaced'])
     if total_stats['fuzzy_matched']:
-        print(f'  Inserted (fuzzy): {total_stats["fuzzy_matched"]}')
+        logger.info('  Inserted (fuzzy): %d', total_stats['fuzzy_matched'])
     if total_stats['skipped']:
-        print(f'  Skipped (rejected): {total_stats["skipped"]}')
+        logger.info('  Skipped (rejected): %d', total_stats['skipped'])
     if total_stats['not_found']:
-        print(f'  Not found: {total_stats["not_found"]}')
-    print(f'  Duration: {duration:.1f}s')
+        logger.warning('  Not found: %d', total_stats['not_found'])
+    logger.info('  Duration: %.1fs', duration)
 
     return True
 

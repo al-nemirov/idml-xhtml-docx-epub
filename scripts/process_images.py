@@ -27,6 +27,7 @@ Part of the book conversion pipeline: InDesign -> XHTML -> DOCX -> EPUB
 import os
 import re
 import sys
+import logging
 import shutil
 import time
 
@@ -34,20 +35,29 @@ import time
 sys.path.insert(0, os.path.dirname(__file__))
 from utils.file_utils import load_json, save_json, backup_file
 
+logger = logging.getLogger(__name__)
+
 
 def load_config():
-    """Load configuration from config.json in the project root."""
+    """Load configuration from config.json in the project root.
+
+    Honors the PIPELINE_CONFIG environment variable to override the default
+    config path (useful for testing without touching the root config.json).
+    """
     import json
-    config_path = os.path.join(os.path.dirname(__file__), '..', 'config.json')
+    config_path = os.environ.get(
+        'PIPELINE_CONFIG',
+        os.path.join(os.path.dirname(__file__), '..', 'config.json'),
+    )
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except FileNotFoundError:
-        print(f'Error: config.json not found at {os.path.abspath(config_path)}')
-        print('Copy config.example.json to config.json and edit it.')
+        logger.error('config.json not found at %s', os.path.abspath(config_path))
+        logger.error('Copy config.example.json to config.json and edit it.')
         sys.exit(1)
     except json.JSONDecodeError as e:
-        print(f'Error: invalid JSON in config.json: {e}')
+        logger.error('invalid JSON in config.json: %s', e)
         sys.exit(1)
 
 
@@ -131,7 +141,7 @@ def extract_phase(config):
     os.makedirs(temp_dir, exist_ok=True)
 
     if not os.path.exists(input_dir):
-        print(f'Error: input directory not found: {input_dir}')
+        logger.error('input directory not found: %s', input_dir)
         return False
 
     all_images = []
@@ -139,13 +149,13 @@ def extract_phase(config):
 
     xhtml_files = sorted([f for f in os.listdir(input_dir) if f.endswith('.xhtml')])
     if not xhtml_files:
-        print(f'No .xhtml files found in {input_dir}')
+        logger.warning('No .xhtml files found in %s', input_dir)
         return False
 
-    print(f'{"=" * 60}')
-    print(f'  IMAGE EXTRACTION')
-    print(f'  Files: {len(xhtml_files)} | Source: {input_dir}')
-    print(f'{"=" * 60}\n')
+    logger.info('%s', '=' * 60)
+    logger.info('  IMAGE EXTRACTION')
+    logger.info('  Files: %d | Source: %s', len(xhtml_files), input_dir)
+    logger.info('%s\n', '=' * 60)
 
     for filename in xhtml_files:
         input_path = os.path.join(input_dir, filename)
@@ -162,13 +172,13 @@ def extract_phase(config):
             all_images.extend(file_images)
             stats['images'] += len(file_images)
             stats['files'] += 1
-            print(f'  {filename}: {len(file_images)} images')
+            logger.info('  %s: %d images', filename, len(file_images))
 
             # Save modified XHTML with anchors
             with open(input_path, 'w', encoding='utf-8') as f:
                 f.write(modified_content)
         else:
-            print(f'  {filename}: no images')
+            logger.info('  %s: no images', filename)
 
     # Build the image map
     map_data = {
@@ -186,18 +196,20 @@ def extract_phase(config):
 
     duration = time.time() - start_time
 
-    print(f'\n{"=" * 60}')
-    print(f'  EXTRACTION RESULTS')
-    print(f'{"=" * 60}')
-    print(f'  Images found: {stats["images"]}')
-    print(f'  Files processed: {stats["files"]}')
-    print(f'  Map saved: {map_path}')
-    print(f'  Backups: {os.path.join(temp_dir, "backups")}')
-    print(f'  Duration: {duration:.1f}s')
-    print(f'\n  You can now review/edit {map_path}')
-    print(f'  Set "approved": false to skip specific images.')
-    print(f'  Set "new_src" to remap image paths.')
-    print(f'  Then run: python process_images.py insert')
+    logger.info('')
+    logger.info('%s', '=' * 60)
+    logger.info('  EXTRACTION RESULTS')
+    logger.info('%s', '=' * 60)
+    logger.info('  Images found: %d', stats['images'])
+    logger.info('  Files processed: %d', stats['files'])
+    logger.info('  Map saved: %s', map_path)
+    logger.info('  Backups: %s', os.path.join(temp_dir, 'backups'))
+    logger.info('  Duration: %.1fs', duration)
+    logger.info('')
+    logger.info('  You can now review/edit %s', map_path)
+    logger.info('  Set "approved": false to skip specific images.')
+    logger.info('  Set "new_src" to remap image paths.')
+    logger.info('  Then run: python process_images.py insert')
 
     return True
 
@@ -271,8 +283,8 @@ def insert_phase(config):
     map_path = os.path.join(temp_dir, 'image_map.json')
     map_data = load_json(map_path)
     if map_data is None:
-        print(f'Error: image_map.json not found at {map_path}')
-        print('Run the extract phase first: python process_images.py extract')
+        logger.error('image_map.json not found at %s', map_path)
+        logger.error('Run the extract phase first: python process_images.py extract')
         return False
 
     all_images = map_data.get('images', [])
@@ -280,14 +292,14 @@ def insert_phase(config):
     rejected = len(all_images) - len(approved)
 
     if not approved:
-        print('No approved images to insert.')
+        logger.info('No approved images to insert.')
         return True
 
-    print(f'{"=" * 60}')
-    print(f'  IMAGE INSERTION')
-    print(f'  Images: {len(approved)} approved'
-          + (f', {rejected} rejected' if rejected else ''))
-    print(f'{"=" * 60}\n')
+    logger.info('%s', '=' * 60)
+    logger.info('  IMAGE INSERTION')
+    logger.info('  Images: %d approved%s', len(approved),
+                (', %d rejected' % rejected) if rejected else '')
+    logger.info('%s\n', '=' * 60)
 
     total_stats = {'replaced': 0, 'skipped': 0, 'not_found': 0}
 
@@ -311,22 +323,23 @@ def insert_phase(config):
             total_stats[key] += file_stats[key]
 
         if file_stats['replaced']:
-            print(f'  {filename}: {file_stats["replaced"]} inserted')
+            logger.info('  %s: %d inserted', filename, file_stats['replaced'])
 
         with open(input_path, 'w', encoding='utf-8') as f:
             f.write(modified_content)
 
     duration = time.time() - start_time
 
-    print(f'\n{"=" * 60}')
-    print(f'  INSERTION RESULTS')
-    print(f'{"=" * 60}')
-    print(f'  Inserted: {total_stats["replaced"]}')
+    logger.info('')
+    logger.info('%s', '=' * 60)
+    logger.info('  INSERTION RESULTS')
+    logger.info('%s', '=' * 60)
+    logger.info('  Inserted: %d', total_stats['replaced'])
     if total_stats['skipped']:
-        print(f'  Skipped (rejected): {total_stats["skipped"]}')
+        logger.info('  Skipped (rejected): %d', total_stats['skipped'])
     if total_stats['not_found']:
-        print(f'  Not found: {total_stats["not_found"]}')
-    print(f'  Duration: {duration:.1f}s')
+        logger.warning('  Not found: %d', total_stats['not_found'])
+    logger.info('  Duration: %.1fs', duration)
 
     return True
 

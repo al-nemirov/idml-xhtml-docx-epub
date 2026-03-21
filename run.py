@@ -30,20 +30,30 @@ import time
 import argparse
 import importlib
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def load_config():
-    """Load configuration from config.json in the project root."""
-    config_path = os.path.join(os.path.dirname(__file__), 'config.json')
+    """Load configuration from config.json in the project root.
+
+    Honors the PIPELINE_CONFIG environment variable to override the default
+    config path (useful for testing without touching the root config.json).
+    """
+    config_path = os.environ.get(
+        'PIPELINE_CONFIG',
+        os.path.join(os.path.dirname(__file__), 'config.json'),
+    )
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except FileNotFoundError:
-        print(f'Error: config.json not found at {os.path.abspath(config_path)}')
-        print('Copy config.example.json to config.json and edit it.')
+        logger.error('config.json not found at %s', os.path.abspath(config_path))
+        logger.error('Copy config.example.json to config.json and edit it.')
         sys.exit(1)
     except json.JSONDecodeError as e:
-        print(f'Error: invalid JSON in config.json: {e}')
+        logger.error('invalid JSON in config.json: %s', e)
         sys.exit(1)
 
 
@@ -118,13 +128,12 @@ STEPS = [
 
 def list_steps():
     """Print available pipeline steps."""
-    print(f'{"=" * 60}')
-    print(f'  PIPELINE STEPS')
-    print(f'{"=" * 60}\n')
+    logger.info('%s', '=' * 60)
+    logger.info('  PIPELINE STEPS')
+    logger.info('%s\n', '=' * 60)
     for step in STEPS:
-        print(f'  {step["num"]}. {step["name"]}')
-        print(f'     {step["description"]}')
-        print()
+        logger.info('  %d. %s', step['num'], step['name'])
+        logger.info('     %s', step['description'])
 
 
 def run_step(step, config):
@@ -136,9 +145,10 @@ def run_step(step, config):
     step_num = step['num']
     step_name = step['name']
 
-    print(f'\n{"═" * 60}')
-    print(f'  STEP {step_num}: {step_name.upper()}')
-    print(f'{"═" * 60}\n')
+    logger.info('')
+    logger.info('%s', '\u2550' * 60)
+    logger.info('  STEP %d: %s', step_num, step_name.upper())
+    logger.info('%s\n', '\u2550' * 60)
 
     start_time = time.time()
 
@@ -158,23 +168,24 @@ def run_step(step, config):
 
         # Interpret result
         if result is False:
-            print(f'\n  ✗ Step {step_num} ({step_name}) FAILED [{duration:.1f}s]')
+            logger.error('Step %d (%s) FAILED [%.1fs]', step_num, step_name, duration)
             return False
 
-        print(f'\n  ✓ Step {step_num} ({step_name}) completed [{duration:.1f}s]')
+        logger.info('Step %d (%s) completed [%.1fs]', step_num, step_name, duration)
         return True
 
     except SystemExit:
         # Some main() functions call sys.exit on error
         duration = time.time() - start_time
-        print(f'\n  ✗ Step {step_num} ({step_name}) exited [{duration:.1f}s]')
+        logger.error('Step %d (%s) exited [%.1fs]', step_num, step_name, duration)
         return False
 
     except Exception as e:
         duration = time.time() - start_time
-        print(f'\n  ✗ Step {step_num} ({step_name}) ERROR [{duration:.1f}s]: {e}')
-        import traceback
-        traceback.print_exc()
+        logger.error(
+            'Step %d (%s) ERROR [%.1fs]: %s', step_num, step_name, duration, e,
+            exc_info=True,
+        )
         return False
 
 
@@ -184,12 +195,19 @@ def run_preflight():
         module = importlib.import_module('scripts.preflight')
         return module.main() == 0
     except Exception as e:
-        print(f'Preflight error: {e}')
+        logger.error('Preflight error: %s', e)
         return False
 
 
 def main():
     """Main entry point for the pipeline runner."""
+    # Configure structured logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+    )
+
     # Ensure we're in the project root
     project_root = os.path.dirname(os.path.abspath(__file__))
     os.chdir(project_root)
@@ -246,17 +264,16 @@ Examples:
 
     # Run preflight unless skipped
     if not args.skip_preflight:
-        print('Running preflight check...\n')
+        logger.info('Running preflight check...')
         if not run_preflight():
-            print('\nPreflight check failed. Fix issues above or use --skip-preflight.')
+            logger.error('Preflight check failed. Fix issues above or use --skip-preflight.')
             sys.exit(1)
-        print()
 
     # Determine which steps to run
     if args.only:
         steps_to_run = [s for s in STEPS if s['num'] == args.only]
         if not steps_to_run:
-            print(f'Error: step {args.only} not found. Use --list to see available steps.')
+            logger.error('step %d not found. Use --list to see available steps.', args.only)
             sys.exit(1)
     else:
         from_step = args.from_step or 1
@@ -264,14 +281,14 @@ Examples:
         steps_to_run = [s for s in STEPS if from_step <= s['num'] <= to_step]
 
     if not steps_to_run:
-        print('No steps to run.')
+        logger.warning('No steps to run.')
         return
 
     # Execute pipeline
     total_start = time.time()
-    print(f'{"═" * 60}')
-    print(f'  PIPELINE: Running steps {steps_to_run[0]["num"]}-{steps_to_run[-1]["num"]}')
-    print(f'{"═" * 60}')
+    logger.info('%s', '\u2550' * 60)
+    logger.info('  PIPELINE: Running steps %d-%d', steps_to_run[0]['num'], steps_to_run[-1]['num'])
+    logger.info('%s', '\u2550' * 60)
 
     completed = 0
     failed = 0
@@ -282,19 +299,20 @@ Examples:
             completed += 1
         else:
             failed += 1
-            print(f'\nPipeline stopped at step {step["num"]}.')
+            logger.error('Pipeline stopped at step %d.', step['num'])
             break
 
     total_duration = time.time() - total_start
 
-    print(f'\n{"═" * 60}')
-    print(f'  PIPELINE COMPLETE')
-    print(f'{"═" * 60}')
-    print(f'  Completed: {completed}/{len(steps_to_run)} steps')
+    logger.info('')
+    logger.info('%s', '\u2550' * 60)
+    logger.info('  PIPELINE COMPLETE')
+    logger.info('%s', '\u2550' * 60)
+    logger.info('  Completed: %d/%d steps', completed, len(steps_to_run))
     if failed:
-        print(f'  Failed: {failed}')
-    print(f'  Total time: {total_duration:.1f}s')
-    print(f'{"═" * 60}')
+        logger.error('  Failed: %d', failed)
+    logger.info('  Total time: %.1fs', total_duration)
+    logger.info('%s', '\u2550' * 60)
 
     sys.exit(1 if failed else 0)
 

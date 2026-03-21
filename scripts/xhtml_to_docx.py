@@ -11,24 +11,35 @@ Part of the book conversion pipeline: InDesign -> XHTML -> DOCX -> EPUB
 import os
 import re
 import json
+import logging
 import subprocess
 import tempfile
+import time
 import sys
 from html.parser import HTMLParser
 
+logger = logging.getLogger(__name__)
+
 
 def load_config():
-    """Load configuration from config.json in the project root."""
-    config_path = os.path.join(os.path.dirname(__file__), '..', 'config.json')
+    """Load configuration from config.json in the project root.
+
+    Honors the PIPELINE_CONFIG environment variable to override the default
+    config path (useful for testing without touching the root config.json).
+    """
+    config_path = os.environ.get(
+        'PIPELINE_CONFIG',
+        os.path.join(os.path.dirname(__file__), '..', 'config.json'),
+    )
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except FileNotFoundError:
-        print(f'Error: config.json not found at {os.path.abspath(config_path)}')
-        print('Copy config.example.json to config.json and edit it.')
+        logger.error('config.json not found at %s', os.path.abspath(config_path))
+        logger.error('Copy config.example.json to config.json and edit it.')
         sys.exit(1)
     except json.JSONDecodeError as e:
-        print(f'Error: invalid JSON in config.json: {e}')
+        logger.error('invalid JSON in config.json: %s', e)
         sys.exit(1)
 
 
@@ -342,15 +353,47 @@ def process_file(input_path, output_path, resource_dir, reference_doc,
             resource_paths.extend(extra_resource_paths)
         command.extend(['--resource-path', os.pathsep.join(resource_paths)])
 
-        result = subprocess.run(command, capture_output=True, text=True)
-        if result.returncode != 0:
-            print(f'  Pandoc error for {os.path.basename(input_path)}:')
-            if result.stderr:
-                print(f'  {result.stderr.strip()}')
-            return False
+        max_retries = 2
+        timeout_seconds = 300
+        for attempt in range(1, max_retries + 1):
+            try:
+                start_t = time.time()
+                result = subprocess.run(
+                    command, capture_output=True, text=True, timeout=timeout_seconds,
+                )
+                elapsed = time.time() - start_t
+                if result.returncode != 0:
+                    logger.error(
+                        'Pandoc error for %s (exit code %d, %.1fs):',
+                        os.path.basename(input_path), result.returncode, elapsed,
+                    )
+                    if result.stderr:
+                        logger.error('  %s', result.stderr.strip())
+                    if attempt < max_retries:
+                        logger.warning('  Retrying (%d/%d)...', attempt, max_retries)
+                        time.sleep(1)
+                        continue
+                    return False
 
-        print(f'  Converted: {os.path.basename(input_path)} -> {os.path.basename(output_path)}')
-        return True
+                logger.info(
+                    '  Converted: %s -> %s (exit code 0, %.1fs)',
+                    os.path.basename(input_path), os.path.basename(output_path), elapsed,
+                )
+                return True
+
+            except subprocess.TimeoutExpired:
+                elapsed = time.time() - start_t
+                logger.error(
+                    'Pandoc timed out after %ds for %s',
+                    timeout_seconds, os.path.basename(input_path),
+                )
+                if attempt < max_retries:
+                    logger.warning('  Retrying (%d/%d)...', attempt, max_retries)
+                    time.sleep(1)
+                    continue
+                return False
+
+        return False
 
     finally:
         # Always clean up the temp file
@@ -375,17 +418,17 @@ def main():
             lua_filters.append(path)
 
     if not os.path.exists(input_dir):
-        print(f'Error: input directory not found: {input_dir}')
+        logger.error('input directory not found: %s', input_dir)
         sys.exit(1)
 
     os.makedirs(output_dir, exist_ok=True)
 
     xhtml_files = [f for f in os.listdir(input_dir) if f.endswith('.xhtml')]
     if not xhtml_files:
-        print(f'No .xhtml files found in {input_dir}')
+        logger.warning('No .xhtml files found in %s', input_dir)
         return
 
-    print(f'Processing {len(xhtml_files)} XHTML file(s)...')
+    logger.info('Processing %d XHTML file(s)...', len(xhtml_files))
 
     success = 0
     errors = 0
@@ -400,7 +443,7 @@ def main():
         else:
             errors += 1
 
-    print(f'\nConversion completed: {success} successful, {errors} errors')
+    logger.info('Conversion completed: %d successful, %d errors', success, errors)
 
     if errors > 0:
         sys.exit(1)
